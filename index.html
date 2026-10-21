@@ -10,6 +10,32 @@ ARENA NEW THREAD HANDOFF — 2026-10-17
 JSON入出力は type:"narration"（または narration:true）/ position:"top|middle|bottom" でやり取り。
 スマホ誤操作防止: 立ち絵のドラッグ/ピンチは「キャラ・立ち絵」タブ時のみ有効。
 2026-10-18 追記: SE（効果音）、自動送り、選択肢（2択ジャンプ）を追加。タイプ音は素材音(CC0)を用意したが初期はOFF。
+2026-10-20 追記: セリフタブに「テキストでまとめて入力」を追加。
+  1行1セリフで「名前｜表情番号｜セリフ｜効果」、行頭「＞背景番号」で次のセリフの背景を変更。
+  名前は番号でもOK。背景も番号か名前で指定可。右クリック等の補助ボタンは「｜を入れる」「＞を入れる」。
+2026-10-20 追記: アニメGIF / アニメWebP / APNG をそのまま（アニメーションを保って）登録できるようにした。
+  prepareSprite() と shrinkBackground() は isAnimatedImage() のファイルを canvas に通さず dataURL をそのまま返す
+  （canvas を通すと1コマ目で静止するため）。容量が大きい場合は自動保存に失敗するので .json 保存を併用。
+2026-10-20 追記: 終了演出の待ち時間（録画用）。state.end = { wait: 秒 }（既定3秒）。
+  最後のセリフの後は wait 秒だけ「もう一度」を出さずに保つ。待機中はタップ無効、✕/Escで編集に戻れる。
+  設定タブ「終了演出（録画用）」で 0/1/2/3/5/8秒から選べる。saveProject(.json)にも含まれる。
+2026-10-20 追記: キャラ個別の揺れON/OFFを追加。state.chars[n].sway（true/false、既定true）。
+  キャラ・立ち絵タブの各カードにスイッチ。OFFのキャラは .char.no-sway で呼吸アニメを止める。
+  全体スイッチは従来どおり設定タブの swayToggle（state.idleSway）。
+2026-10-20 追記: 動画アプリ用セーフエリア（ウィンドウタブ）。state.win.safe = {preset,b,t,r,guide,guidePlay}。
+  stage に --safe-b/--safe-t/--safe-r をセットし、セリフ枠・地の文・選択肢が自動で内側へ寄る。
+  プリセット: tiktok(下25/上7/右13) / reels(下35/上14/右8) / shorts(下35/上15/右18)。
+  再生中は右上の「枠」ボタンでガイドの表示切替（録画時はOFF）。
+2026-10-20 追記: エフェクトに「シンプル」を追加（既定の見た目）。
+  heart2 … 数個のフラットなハートがふわっと舞う（光・きらめきなし）
+  flower … ＊のような6枚花びらの花がひらひら浮かぶ
+  heart  … 旧・豪華版（光＋白フチハート＋きらめき）※残してあります
+  一括入力の「ハート」は heart2、「ハートきらめき」で heart、「花」で flower になります。
+2026-10-20 追記: エフェクトのデザイン刷新。
+  heart: 光の玉＋白フチ/ツヤ入りグラデのハート（4色からランダム）＋きらめきの3層。
+  soft : 淡いもや＋パステルの玉ボケ＋広がる輪＋きらめき。1.25〜1.5秒で消え、1.85秒以内にDOM除去。
+  どちらも次のセリフで即時消去（既存仕様どおり）。
+  解析は parseBulkScript()、書き出しは exportBulkText()。既存のセリフ編集UIはそのまま（詳細調整用）。
 
 新しい担当エージェントへ:
 1. このHTMLを現在の完成版・唯一の基準として扱うこと。
@@ -160,12 +186,14 @@ button, input, select, textarea{font-family:inherit; font-size:inherit; color:in
   100%{transform:translate(0,0) scaleX(1);}
 }
 body.playing:not(.still) .char-bob{animation:breathe 7.2s ease-in-out infinite;}
+/* キャラ個別に揺れOFF（キャラ・立ち絵タブのチェック） */
+.char.no-sway .char-bob{animation:none !important;}
 .stage-editing .char{outline:2px dashed rgba(255,255,255,.0); outline-offset:6px; transition:outline-color .15s;}
 .stage-editing .char.selected{outline-color:rgba(255,92,138,.95);}
 
 /* ============ 会話ウィンドウ（テーマ別） ============ */
 .dialogue{
-  position:absolute; left:3.2cqw; right:3.2cqw; bottom:3.6cqh; z-index:20;
+  position:absolute; left:3.2cqw; right:calc(3.2cqw + var(--safe-r, 0cqw)); bottom:calc(3.6cqh + var(--safe-b, 0cqh)); z-index:20;
   padding:3.2cqh 4cqw 4.4cqh;
   font-size:calc(3.55cqh * var(--font-scale, 1));
   line-height:1.5; letter-spacing:.01em;
@@ -246,7 +274,7 @@ body.playing:not(.still) .char-bob{animation:breathe 7.2s ease-in-out infinite;}
 .dialogue.theme-cover{
   left:0; right:0; bottom:0;
   min-height:28cqh; box-sizing:border-box;
-  padding:6.2cqh 6cqw 4.5cqh;
+  padding:6.2cqh 6cqw calc(4.5cqh + var(--safe-b, 0cqh));
   background:#0b1022;
   border:none; border-top:2px solid #6177b5; border-radius:0;
   box-shadow:0 -1.2cqh 2.8cqh rgba(0,0,0,.38);
@@ -262,12 +290,12 @@ body.playing:not(.still) .char-bob{animation:breathe 7.2s ease-in-out infinite;}
 .dialogue.theme-cover .hint{right:4cqw; bottom:2cqh; color:#afbee9;}
 
 /* ウィンドウ位置バリエーション（将来拡張用・現状は bottom 固定で使用） */
-.dialogue.pos-middle{bottom:auto; top:50%; transform:translateY(-50%);}
-.dialogue.pos-top{bottom:auto; top:3.2cqh;}
+.dialogue.pos-middle{bottom:auto; top:calc(50% + (var(--safe-t, 0cqh) - var(--safe-b, 0cqh)) / 2); transform:translateY(-50%);}
+.dialogue.pos-top{bottom:auto; top:calc(3.2cqh + var(--safe-t, 0cqh));}
 
 /* --- 地の文（ナレーション）: 名前なし・上部中央・テーマ影響を受けない簡素表示 --- */
 .dialogue.narration{
-  left:7cqw; right:7cqw; bottom:auto; top:4.2cqh;
+  left:7cqw; right:calc(7cqw + var(--safe-r, 0cqw)); bottom:auto; top:calc(4.2cqh + var(--safe-t, 0cqh));
   min-height:0;
   padding:1.5cqh 3cqw 1.7cqh;
   background:rgba(8,10,20,.42);
@@ -282,7 +310,7 @@ body.playing:not(.still) .char-bob{animation:breathe 7.2s ease-in-out infinite;}
 .dialogue.narration .text{font-weight:500;}
 /* 地の文の表示位置（セリフごとに指定可） */
 .dialogue.narration.nar-middle{top:50%; transform:translateY(-50%);}
-.dialogue.narration.nar-bottom{top:auto; bottom:3.6cqh;}
+.dialogue.narration.nar-bottom{top:auto; bottom:calc(3.6cqh + var(--safe-b, 0cqh));}
 /* 地の文の背景: ウィンドウ（不透明・読みやすく） */
 .dialogue.narration.nar-window{
   background:linear-gradient(180deg, rgba(12,16,34,.95), rgba(8,11,26,.93));
@@ -292,9 +320,31 @@ body.playing:not(.still) .char-bob{animation:breathe 7.2s ease-in-out infinite;}
   text-shadow:0 1px 3px rgba(0,0,0,.5);
 }
 
+/* ============ セーフエリア（動画アプリのUIがかぶる範囲） ============ */
+.safe-layer{position:absolute; inset:0; z-index:44; pointer-events:none; display:none;}
+.stage.show-safe .safe-layer{display:block;}
+.safe-band{
+  position:absolute; border:1px solid rgba(255,88,122,.55);
+  background:repeating-linear-gradient(135deg, rgba(255,72,110,.26) 0 7px, rgba(255,72,110,.07) 7px 14px);
+}
+.safe-band.t{left:0; right:0; top:0; height:var(--safe-t, 0cqh); border-width:0 0 1px;}
+.safe-band.b{left:0; right:0; bottom:0; height:var(--safe-b, 0cqh); border-width:1px 0 0;}
+.safe-band.r{top:0; right:0; bottom:0; width:var(--safe-r, 0cqw); border-width:0 0 0 1px;}
+.safe-rect{
+  position:absolute; left:0; right:var(--safe-r, 0cqw); top:var(--safe-t, 0cqh); bottom:var(--safe-b, 0cqh);
+  border:1.5px dashed rgba(120,255,190,.8); border-radius:2px;
+}
+.safe-label{
+  position:absolute; right:calc(var(--safe-r, 0cqw) + 1.4cqw); bottom:1.3cqh;
+  max-width:70cqw; text-align:right; font-size:1.95cqh; font-weight:700; color:#ffe1e9;
+  background:rgba(12,14,26,.72); border:1px solid rgba(255,120,150,.5); border-radius:.8cqh;
+  padding:.45cqh 1cqw; letter-spacing:.02em; line-height:1.35;
+}
+.safe-label:empty{display:none;}
+
 /* ============ 選択肢（ゲーム風ジャンプ） ============ */
 .choice-box{
-  position:absolute; left:6cqw; right:6cqw; top:54%; transform:translateY(-50%);
+  position:absolute; left:6cqw; right:calc(6cqw + var(--safe-r, 0cqw)); top:calc(54% - var(--safe-b, 0cqh) / 2); transform:translateY(-50%);
   z-index:25; display:flex; flex-direction:column; gap:1.4cqh;
 }
 .choice-btn{
@@ -306,19 +356,140 @@ body.playing:not(.still) .char-bob{animation:breathe 7.2s ease-in-out infinite;}
 }
 .choice-btn:active{background:rgba(255,92,138,.4);}
 
-/* ============ エフェクト（heart / sparkle） ============ */
+/* ============ エフェクト（heart / sparkle / soft） ============ */
 .fx{position:absolute; pointer-events:none; will-change:transform,opacity;}
-.fx-soft{width:var(--sz,6cqh);height:var(--sz,6cqh);margin-left:calc(var(--sz,6cqh)/-2);margin-top:calc(var(--sz,6cqh)/-2);border-radius:50%;background:radial-gradient(circle at 38% 35%,rgba(255,255,255,.92) 0 18%,rgba(255,226,239,.65) 42%,rgba(214,230,255,.24) 68%,rgba(255,255,255,0) 74%);filter:blur(.12cqh) drop-shadow(0 0 1.4cqh rgba(255,225,242,.58));animation:fxSoft var(--dur,1.45s) ease-in-out var(--delay,0s) both;}
-@keyframes fxSoft{0%{opacity:0;transform:translate(0,3cqh) scale(.45);}22%{opacity:.82;transform:translate(var(--sway,1cqh),0) scale(1);}65%{opacity:.68;transform:translate(calc(var(--sway,1cqh)*-1),-7cqh) scale(1.08);}100%{opacity:0;transform:translate(var(--sway,1cqh),-14cqh) scale(.82);}}
-.fx-heart{width:7cqh; height:7cqh; margin-left:-3.5cqh; margin-top:-3.5cqh;
-  animation:fxHeart var(--dur,1.9s) cubic-bezier(.22,.7,.28,1) var(--delay,0s) both;}
-.fx-heart svg{width:100%; height:100%; filter:drop-shadow(0 0 1.6cqh rgba(255,120,170,.85));}
-@keyframes fxHeart{
-  0%{opacity:0; transform:translateY(2.5cqh) scale(.25) rotate(var(--rot,0deg));}
-  18%{opacity:1; transform:translateY(-.4cqh) scale(1.12) rotate(var(--rot,0deg));}
-  55%{opacity:1; transform:translateY(-4.5cqh) scale(1) rotate(var(--rot,0deg));}
-  100%{opacity:0; transform:translateY(-13cqh) scale(.92) rotate(var(--rot,0deg));}
+
+/* ---- ハート：ぷにっと弾むハートビート＋きらめき ---- */
+.fx-heartglow{
+  width:36cqh; height:36cqh; margin-left:-18cqh; margin-top:-18cqh; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,150,190,.4) 0 20%, rgba(255,175,210,.19) 44%, rgba(255,200,225,0) 70%);
+  animation:fxHeartGlow var(--dur,2.3s) ease-out var(--delay,0s) both;
 }
+@keyframes fxHeartGlow{
+  0%{opacity:0; transform:scale(.4);}
+  22%{opacity:1; transform:scale(1);}
+  68%{opacity:.72; transform:scale(1.1);}
+  100%{opacity:0; transform:scale(1.22);}
+}
+.fx-heart{
+  width:calc(9.2cqh * var(--sc,1)); height:calc(9.2cqh * var(--sc,1));
+  margin-left:calc(-4.6cqh * var(--sc,1)); margin-top:calc(-4.6cqh * var(--sc,1));
+  animation:fxHeart var(--dur,2.15s) cubic-bezier(.22,.72,.26,1) var(--delay,0s) both;
+}
+.fx-heart svg{
+  width:100%; height:100%; overflow:visible;
+  filter:drop-shadow(0 0 1.1cqh rgba(255,105,160,.72)) drop-shadow(0 0 .3cqh rgba(255,255,255,.55));
+}
+@keyframes fxHeart{
+  0%{opacity:0; transform:translate(0,3.4cqh) scale(.16) rotate(calc(var(--rot,0deg) * -.6));}
+  11%{opacity:1; transform:translate(calc(var(--sway,0cqh) * .22),-.7cqh) scale(1.16) rotate(var(--rot,0deg));}
+  20%{transform:translate(calc(var(--sway,0cqh) * .34),-1.5cqh) scale(.93) rotate(calc(var(--rot,0deg) * 1.08));}
+  29%{transform:translate(calc(var(--sway,0cqh) * .46),-2.3cqh) scale(1.08) rotate(calc(var(--rot,0deg) * 1.16));}
+  52%{opacity:1; transform:translate(calc(var(--sway,0cqh) * .7),-4.8cqh) scale(1) rotate(calc(var(--rot,0deg) * 1.4));}
+  100%{opacity:0; transform:translate(var(--sway,0cqh),-14cqh) scale(.86) rotate(calc(var(--rot,0deg) * 2));}
+}
+.fx-htw{
+  width:calc(3.4cqh * var(--sc,1)); height:calc(3.4cqh * var(--sc,1));
+  margin-left:calc(-1.7cqh * var(--sc,1)); margin-top:calc(-1.7cqh * var(--sc,1));
+  animation:fxHtw var(--dur,1.5s) ease-out var(--delay,0s) both;
+}
+.fx-htw svg{width:100%; height:100%; filter:drop-shadow(0 0 .7cqh rgba(255,235,245,.95));}
+@keyframes fxHtw{
+  0%{opacity:0; transform:scale(.15) rotate(0deg);}
+  32%{opacity:.95; transform:scale(1) rotate(45deg);}
+  68%{opacity:.7; transform:scale(.85) rotate(80deg);}
+  100%{opacity:0; transform:translate(var(--sway,0cqh),-3.4cqh) scale(.25) rotate(115deg);}
+}
+
+/* ---- ほわほわ～：パステルの光の玉＋リング＋きらめき（夢見心地） ---- */
+.fx-haze{
+  width:46cqh; height:46cqh; margin-left:-23cqh; margin-top:-23cqh; border-radius:50%;
+  background:radial-gradient(circle, rgba(255,228,242,.34) 0 16%, rgba(214,226,255,.22) 40%, rgba(255,255,255,0) 68%);
+  filter:blur(1.1cqh);
+  animation:fxHaze var(--dur,1.65s) ease-out var(--delay,0s) both;
+}
+@keyframes fxHaze{
+  0%{opacity:0; transform:scale(.62);}
+  28%{opacity:.95; transform:scale(1);}
+  100%{opacity:0; transform:scale(1.16);}
+}
+.fx-bokeh{
+  width:var(--sz,6cqh); height:var(--sz,6cqh);
+  margin-left:calc(var(--sz,6cqh) / -2); margin-top:calc(var(--sz,6cqh) / -2);
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 32% 27%, rgba(255,255,255,.98) 0 8%, rgba(255,255,255,.66) 16%, rgba(255,255,255,0) 33%),
+    radial-gradient(circle at 50% 50%, var(--c1, rgba(255,214,232,.85)) 0 52%, var(--c2, rgba(214,226,255,.5)) 72%, rgba(255,255,255,0) 80%);
+  box-shadow:
+    inset 0 0 0 .16cqh rgba(255,255,255,.62),
+    inset 0 -.45cqh .9cqh rgba(255,255,255,.3),
+    0 0 1.7cqh var(--glow, rgba(255,190,220,.55));
+  filter:blur(var(--blur,.05cqh));
+  animation:fxBokeh var(--dur,1.45s) cubic-bezier(.25,.6,.3,1) var(--delay,0s) both;
+}
+@keyframes fxBokeh{
+  0%{opacity:0; transform:translate(0,4cqh) scale(.26);}
+  22%{opacity:.96; transform:translate(calc(var(--sway,1cqh) * .5),0) scale(1);}
+  62%{opacity:.86; transform:translate(calc(var(--sway,1cqh) * -.45),-6.6cqh) scale(1.07);}
+  100%{opacity:0; transform:translate(var(--sway,1cqh),-15cqh) scale(.78);}
+}
+.fx-ring{
+  width:var(--sz,8cqh); height:var(--sz,8cqh);
+  margin-left:calc(var(--sz,8cqh) / -2); margin-top:calc(var(--sz,8cqh) / -2);
+  border-radius:50%;
+  border:.19cqh solid var(--rc, rgba(255,216,238,.8));
+  box-shadow:0 0 1.1cqh var(--rc, rgba(255,216,238,.5)), inset 0 0 .7cqh rgba(255,255,255,.3);
+  animation:fxRing var(--dur,1.35s) ease-out var(--delay,0s) both;
+}
+@keyframes fxRing{
+  0%{opacity:0; transform:scale(.12);}
+  18%{opacity:.92; transform:scale(.62);}
+  68%{opacity:.5; transform:scale(1);}
+  100%{opacity:0; transform:scale(1.32);}
+}
+.fx-tw{
+  width:calc(3.1cqh * var(--sc,1)); height:calc(3.1cqh * var(--sc,1));
+  margin-left:calc(-1.55cqh * var(--sc,1)); margin-top:calc(-1.55cqh * var(--sc,1));
+  animation:fxTw var(--dur,1.4s) ease-out var(--delay,0s) both;
+}
+.fx-tw svg{width:100%; height:100%; filter:drop-shadow(0 0 .8cqh rgba(255,240,250,.9));}
+@keyframes fxTw{
+  0%{opacity:0; transform:scale(.1) rotate(0deg);}
+  30%{opacity:.9; transform:scale(1) rotate(55deg);}
+  70%{opacity:.62; transform:scale(.8) rotate(105deg);}
+  100%{opacity:0; transform:translate(var(--sway,0cqh),-3cqh) scale(.2) rotate(150deg);}
+}
+
+/* ---- ハート（シンプル）：数個のハートがふわっと舞う ---- */
+.fx-heart-s{
+  width:calc(7.6cqh * var(--sc,1)); height:calc(7.6cqh * var(--sc,1));
+  margin-left:calc(-3.8cqh * var(--sc,1)); margin-top:calc(-3.8cqh * var(--sc,1));
+  animation:fxHeartS var(--dur,2.3s) cubic-bezier(.28,.62,.34,1) var(--delay,0s) both;
+}
+.fx-heart-s svg{width:100%; height:100%; filter:drop-shadow(0 .2cqh .5cqh rgba(80,20,45,.28));}
+@keyframes fxHeartS{
+  0%{opacity:0; transform:translate(calc(var(--sway,0cqh) * -.5),3cqh) scale(.78) rotate(var(--rot,0deg));}
+  14%{opacity:var(--op,.92);}
+  72%{opacity:var(--op,.92);}
+  100%{opacity:0; transform:translate(var(--sway,1.6cqh),-12cqh) scale(.94) rotate(calc(var(--rot,0deg) * 1.8));}
+}
+
+/* ---- 花（シンプル）：＊のような花がひらひら浮かぶ ---- */
+.fx-flower-s{
+  width:calc(5.6cqh * var(--sc,1)); height:calc(5.6cqh * var(--sc,1));
+  margin-left:calc(-2.8cqh * var(--sc,1)); margin-top:calc(-2.8cqh * var(--sc,1));
+  animation:fxFlowerS var(--dur,2.4s) cubic-bezier(.3,.62,.34,1) var(--delay,0s) both;
+}
+.fx-flower-s svg{width:100%; height:100%; filter:drop-shadow(0 .18cqh .55cqh rgba(80,25,50,.22));}
+@keyframes fxFlowerS{
+  0%{opacity:0; transform:translate(calc(var(--sway,0cqh) * -.4),1.6cqh) scale(.08) rotate(var(--rot,0deg));}
+  9%{opacity:var(--op,.95); transform:translate(calc(var(--sway,0cqh) * -.3),0) scale(1.34) rotate(calc(var(--rot,0deg) + 9deg));}
+  17%{transform:translate(calc(var(--sway,0cqh) * -.2),-.7cqh) scale(1) rotate(calc(var(--rot,0deg) + 16deg));}
+  72%{opacity:var(--op,.95); transform:translate(calc(var(--sway,0cqh) * .55),-5.4cqh) scale(1) rotate(calc(var(--rot,0deg) + 30deg));}
+  100%{opacity:0; transform:translate(var(--sway,1.6cqh),-9.4cqh) scale(.9) rotate(calc(var(--rot,0deg) + 52deg));}
+}
+
+/* ---- キラキラ ---- */
 .fx-spark{width:3.6cqh; height:3.6cqh; margin-left:-1.8cqh; margin-top:-1.8cqh;
   animation:fxSpark var(--dur,.95s) ease-out var(--delay,0s) both;}
 .fx-spark svg{width:100%; height:100%; filter:drop-shadow(0 0 .8cqh rgba(255,240,180,.9));}
@@ -423,6 +594,38 @@ input[type=checkbox]{width:20px; height:20px; accent-color:var(--ui-accent);}
 }
 .thumb.on{border-color:var(--ui-accent); box-shadow:0 0 0 2px rgba(255,92,138,.28);}
 .thumb .lab{position:absolute; left:3px; bottom:3px; font-size:9.5px; background:rgba(0,0,0,.6); padding:1px 5px; border-radius:6px;}
+.thumb .num{position:absolute; left:3px; top:3px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:rgba(0,0,0,.66); color:#fff; font-size:10px; font-weight:800; line-height:16px; text-align:center;}
+
+/* ============ テキスト一括入力 ============ */
+.bulk-help{font-size:11px; color:var(--ui-muted); line-height:1.8; background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:10px; padding:7px 9px;}
+.bulk-help b{color:var(--ui-txt); font-weight:700;}
+.bulk-help .miss{color:var(--ui-muted); opacity:.75;}
+.bulk-preview{
+  margin-top:8px; border:1px solid var(--ui-line); border-radius:10px; background:var(--ui-bg2);
+  padding:7px 9px; max-height:250px; overflow:auto; font-size:11.5px; line-height:1.55;
+}
+.bulk-preview .bp-empty{color:var(--ui-muted);}
+.bp-row{display:flex; gap:7px; padding:3px 0; align-items:flex-start; border-bottom:1px dashed rgba(255,255,255,.07);}
+.bp-row:last-child{border-bottom:0;}
+.bp-num{flex:0 0 24px; color:var(--ui-muted); text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px; line-height:1.65;}
+.bp-txt{flex:1; min-width:0; word-break:break-word;}
+.bp-who{color:var(--ui-accent); font-weight:800;}
+.bp-slot{color:var(--ui-muted); font-size:10.5px; margin-left:3px;}
+.bp-bg{color:#8fb7ff; font-size:10.5px; margin-left:4px;}
+.bp-fx{flex:0 0 auto; color:var(--ui-muted); font-size:10.5px;}
+.bp-row.r-bg .bp-txt{color:#8fb7ff;}
+.bp-row.r-err .bp-txt{color:#ff8a8a;}
+.bp-row.r-warn .bp-txt{color:#ffcf7a;}
+.bp-row.r-note .bp-txt{color:var(--ui-muted);}
+.bulk-stat{color:var(--ui-muted); font-size:10.5px; padding-top:6px; border-top:1px solid var(--ui-line); margin-top:4px;}
+.bulk-stat strong{color:#ff8a8a;}
+.bulk-details{margin-top:8px; border:1px solid var(--ui-line); border-radius:10px; background:var(--ui-bg2); padding:6px 9px;}
+.bulk-details > summary{cursor:pointer; font-size:11.5px; font-weight:700; color:var(--ui-muted); outline:none;}
+.bulk-details[open] > summary{margin-bottom:5px;}
+.bulk-details .bulk-help{border:0; background:transparent; padding:0;}
+.bulk-help .rowline{display:block; margin:1px 0;}
+.bulk-help .k2{display:inline-block; min-width:1.4em; color:var(--ui-txt); font-weight:800;}
+.bulk-help .sep{color:var(--ui-line);}
 
 /* 会話ウィンドウ テーマ選択カード */
 .theme-cards{display:grid; grid-template-columns:repeat(2,1fr); gap:9px;}
@@ -479,6 +682,10 @@ body:not(.playing) #playerRoot{display:none;}
   transition:opacity .5s;
 }
 .exit:active{opacity:1;}
+.exit.shield{
+  right:calc(56px + env(safe-area-inset-right,0px)); width:auto; min-width:44px; padding:0 11px;
+  border-radius:19px; font-size:12px; font-weight:700; letter-spacing:.04em;
+}
 .exit.auto-hide{opacity:0; pointer-events:none;}   /* 録画に映えないよう再生中は自動的に消す（長押しで一時表示） */
 .end-overlay.guard{pointer-events:none;}   /* 表示直後の連打でボタンを誤タップしないための入力ガード */
 .end-overlay{
@@ -566,16 +773,45 @@ code.k{background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:
     <section class="panel" id="tabChar">
       <div id="charEditors"></div>
       <button class="btn" id="btnAddChar" style="width:100%">＋ キャラを追加（最大3人）</button>
-      <p class="sub" style="margin-top:8px">立ち絵は透過PNG（APNG対応）を推奨。プレビュー内で直接ドラッグ移動、±ボタンやスライダーで拡大縮小できます。編集画面は左右に余白があるので、余白をドラッグしてスクロールしてください。</p>
+      <p class="sub" style="margin-top:8px">立ち絵は透過PNG（APNG対応）を推奨。アニメGIF・アニメWebPもそのまま動きます（短いループ推奨）。プレビュー内で直接ドラッグ移動、±ボタンやスライダーで拡大縮小できます。編集画面は左右に余白があるので、余白をドラッグしてスクロールしてください。</p>
     </section>
 
     <!-- ---- セリフ ---- -->
     <section class="panel" id="tabLine">
+      <!-- ---- テキストでまとめて入力 ---- -->
+      <div class="card" id="bulkCard">
+        <h3>テキストでまとめて入力</h3>
+        <p class="sub" style="margin:0 0 7px">
+          1行に1セリフ。 <code class="k">名前｜表情番号｜セリフ｜効果</code><br>
+          効果は <code class="k">ハート</code> / <code class="k">花</code> / <code class="k">キラキラ</code> / <code class="k">ほわほわ</code> / <code class="k">ハートきらめき</code>。<br>
+          背景は <code class="k">＞背景番号</code> の行で（次のセリフから切替）、<code class="k">地｜</code> で地の文です。
+        </p>
+        <textarea class="input" id="bulkArea" spellcheck="false" autocapitalize="off" autocomplete="off" style="min-height:180px; font-size:13.5px" placeholder="ひなた｜1｜せんぱい！ やっと見つけた〜！｜キラキラ&#10;晴真｜1｜どうしたんだ、そんなに急いで。&#10;＞2&#10;ひなた｜1｜ここ、覚えてる？&#10;地｜放課後の教室。窓の外は夕焼け色。"></textarea>
+        <div class="row" style="margin-top:7px; gap:6px; flex-wrap:wrap">
+          <button class="btn sm" id="btnBulkSep" title="カーソル位置にセリフの区切りを入れる">｜ を入れる</button>
+          <button class="btn sm" id="btnBulkBg" title="カーソル位置に背景変更の行を入れる">＞ を入れる</button>
+          <button class="btn sm" id="btnBulkSample">サンプルを入れる</button>
+          <button class="btn sm" id="btnBulkClear">クリア</button>
+        </div>
+        <div class="bulk-preview" id="bulkPreview"></div>
+        <div class="row" style="margin-top:9px; gap:6px; flex-wrap:wrap">
+          <button class="btn sm primary" id="btnBulkAppend">＋ 末尾に追加</button>
+          <button class="btn sm" id="btnBulkReplace">この内容で置き換え</button>
+          <button class="btn sm" id="btnBulkExport">書き出し</button>
+        </div>
+        <details class="bulk-details" id="bulkDetails">
+          <summary>番号の一覧・効果の書き方を見る</summary>
+          <div class="bulk-help" id="bulkHelp"></div>
+        </details>
+        <p class="sub" style="margin:7px 0 0">追加後も、各セリフの行をタップすれば話者・効果音・選択肢などを個別に編集できます。</p>
+      </div>
+
       <div class="row" style="margin-bottom:10px">
         <button class="btn sm" id="btnAddLine">＋ セリフを追加</button>
         <button class="btn sm" id="btnToggleJson">JSONで一括入出力</button>
       </div>
       <div class="card" style="padding:10px; margin-bottom:10px">
+        <h3 style="margin:0 0 7px; font-size:12.5px">1行ずつ追加（話者を選んで入力）</h3>
         <div class="row" style="align-items:flex-end; gap:8px">
           <div class="field" style="flex:0 0 40%; margin:0">
             <label>話者</label>
@@ -629,6 +865,48 @@ code.k{background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:
           </select>
         </div>
       </div>
+
+      <div class="card" id="safeCard">
+        <h3>動画アプリ用セーフエリア</h3>
+        <p class="sub" style="margin:0 0 8px">
+          TikTokなどは画面の下側と右側にUIが重なり、セリフが隠れます。<br>
+          プリセットを選ぶと、セリフ枠がその分だけ自動で内側へ移動します。
+        </p>
+        <div class="field">
+          <label>プリセット</label>
+          <select class="input" id="safePreset">
+            <option value="none">なし（標準）</option>
+            <option value="tiktok">TikTok（下25%・上7%・右13%）</option>
+            <option value="reels">Instagramリール（下35%・上14%・右8%）</option>
+            <option value="shorts">YouTubeショート（下35%・上15%・右18%）</option>
+            <option value="custom">カスタム</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>下の余白（UIが重なる高さ） <span id="safeBLabel">0%</span></label>
+          <input type="range" id="safeBRange" min="0" max="45" step="1" value="0">
+        </div>
+        <div class="field">
+          <label>上の余白 <span id="safeTLabel">0%</span></label>
+          <input type="range" id="safeTRange" min="0" max="25" step="1" value="0">
+        </div>
+        <div class="field">
+          <label>右の余白（アイコン列） <span id="safeRLabel">0%</span></label>
+          <input type="range" id="safeRRange" min="0" max="25" step="1" value="0">
+        </div>
+        <div class="switch-row">
+          <span class="lbl">編集画面に枠を表示<small>斜線の部分がアプリのUIで隠れます</small></span>
+          <input type="checkbox" id="safeGuideToggle" checked>
+        </div>
+        <div class="switch-row">
+          <span class="lbl">再生画面にも枠を表示<small>確認用。録画するときはOFFに</small></span>
+          <input type="checkbox" id="safeGuidePlayToggle">
+        </div>
+        <p class="sub" style="margin:8px 0 0">
+          再生中は右上の「枠」ボタンでも表示を切り替えられます（長押しでボタンが出ます）。<br>
+          録画するときは「設定 → 画面への収め方」を<b>画面いっぱい</b>にすると、動画アプリ側で黒帯が切られません。
+        </p>
+      </div>
     </section>
 
     <!-- ---- 設定 ---- -->
@@ -658,6 +936,25 @@ code.k{background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:
       </div>
 
       <div class="card">
+        <h3>終了演出（録画用）</h3>
+        <div class="field">
+          <label>最後のセリフ後、「もう一度」を出すまで待つ秒数</label>
+          <select class="input" id="endWaitSel">
+            <option value="0">0秒（すぐ出す）</option>
+            <option value="1">1秒</option>
+            <option value="2">2秒</option>
+            <option value="3">3秒（おすすめ）</option>
+            <option value="5">5秒</option>
+            <option value="8">8秒</option>
+          </select>
+        </div>
+        <p class="sub" style="margin:0">
+          待っている間は最後のセリフがそのまま表示されます（録画の余韻用）。<br>
+          待ち時間中はタップしても何も起きません（最後のセリフのまま。✕で編集に戻れます）。
+        </p>
+      </div>
+
+      <div class="card">
         <h3>文字表示</h3>
         <div class="switch-row">
           <span class="lbl">1文字ずつ表示<small>タイプライター風に出します（タップで全文表示）</small></span>
@@ -671,7 +968,7 @@ code.k{background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:
           </select>
         </div>
         <div class="switch-row">
-          <span class="lbl">キャラの揺れ<small>呼吸するように少し揺れます</small></span>
+          <span class="lbl">キャラの揺れ（全体）<small>キャラごとのON/OFFは「キャラ・立ち絵」タブで設定できます</small></span>
           <input type="checkbox" id="swayToggle" checked>
         </div>
       </div>
@@ -715,6 +1012,7 @@ code.k{background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:
         <ul class="tips">
           <li><b>背景</b>：画像を追加、または単色／なし。スロットを選ぶと開始時の背景になります。</li>
           <li><b>立ち絵</b>：透過PNG（APNGも可）を表情ごとに登録。プレビュー内でドラッグ＝移動（キャラ・立ち絵タブ時のみ）、＋／−＝拡大縮小、⇄＝左右反転、前面／背面＝表示順。</li>
+          <li><b>揺れ</b>：再生中は呼吸するように少し揺れます。キャラごとにON/OFFでき、全体のON/OFFは設定タブにあります。</li>
           <li><b>セリフ</b>：順番に登録。「話者」「表情」「本文」「エフェクト(heart / sparkle)」を指定します。</li>
           <li><b>地の文</b>：セリフの種類を「地の文」にすると、話者なしで描写文を表示します。位置・背景も指定できます。</li>
           <li><b>選択肢</b>：セリフに選択肢（最大4つ）とジャンプ先を追加すると、再生中にボタンが出て分岐します。2択だけでゲーム感がでます。</li>
@@ -741,6 +1039,7 @@ code.k{background:var(--ui-bg2); border:1px solid var(--ui-line); border-radius:
 <!-- ================= 再生画面 ================= -->
 <div id="playerRoot" class="fit-contain">
   <button id="btnExitPlay" class="exit hidden" title="編集に戻る">✕</button>
+  <button id="btnSafePlay" class="exit shield hidden" title="セーフエリアの枠を表示/隠す">枠</button>
   <div class="end-overlay hidden" id="endOverlay">
     <div class="msg">おわり</div>
     <button class="btn primary" id="btnReplayAll">↻ もう一度</button>
@@ -828,6 +1127,8 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
    */
   async function shrinkBackground(file, maxW, maxH, quality) {
     const dataUrl = await readFileAsDataURL(file);
+    // GIF / WebP は canvas に描くと1コマ目で静止するので、縮小せずそのまま使う
+    if (isAnimatedImage(file)) return dataUrl;
     const img = await loadImage(dataUrl);
     const scale = Math.min(1, (maxW || 1080) / img.width, (maxH || 1920) / img.height);
     if (scale >= 1 && file.size < 900 * 1024) return dataUrl;   // 十分小さいPNG等はそのまま
@@ -845,10 +1146,18 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
    * 立ち絵用: APNG対応のため PNG はそのまま保持。
    * それ以外（JPEG/WebP等）は PNG に変換し、透過を保てるよう縮小のみ行う。
    */
+  const isAnimatedImage = (file) => {
+    const t = (file && file.type) || '';
+    const n = (file && file.name) || '';
+    return t === 'image/gif' || t === 'image/webp' || t === 'image/apng' ||
+           /\.(gif|webp|apng)$/i.test(n);
+  };
   async function prepareSprite(file) {
     const dataUrl = await readFileAsDataURL(file);
     const isPng = file.type === 'image/png' || /\.png$/i.test(file.name || '');
     if (isPng) return dataUrl;      // ★APNGのアニメーションを壊さないため無加工
+    // GIF / WebP も canvas を通すと1コマ目で静止してしまうので、そのまま使う
+    if (isAnimatedImage(file)) return dataUrl;
     const img = await loadImage(dataUrl);
     const scale = Math.min(1, 1600 / img.height);
     const w = Math.max(1, Math.round(img.width * scale));
@@ -869,9 +1178,11 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   ];
   const FX_LIST = [
     { key: 'none', label: 'なし' },
-    { key: 'heart', label: 'ハート' },
+    { key: 'heart2', label: 'ハート（シンプル）' },
+    { key: 'flower', label: '花（シンプル）' },
+    { key: 'heart', label: 'ハート（きらめき付き）' },
     { key: 'sparkle', label: 'キラキラ' },
-    { key: 'soft', label: 'ほわほわ～' }
+    { key: 'soft', label: 'ほわほわ～（光の玉）' }
   ];
   // 立ち絵の見せ方。scale はステージ高に対する画像高、head は画像上端の目安。
   // モード変更時は現在の画像上端（顔位置）を保ち、下側だけを画面外／ウィンドウ下へ送る。
@@ -897,6 +1208,8 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   // 絵文字は環境によって表示が崩れるため、セリフ一覧のアイコンはインラインSVGを使う
   const FX_ICON = {
     none: '',
+    heart2: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="#ff8fb4" stroke-width="2.1" stroke-linejoin="round" d="M12 20.2S4.4 14.9 4.4 9.9c0-2.6 2-4.5 4.3-4.5 1.4 0 2.6.7 3.3 1.8.7-1.1 1.9-1.8 3.3-1.8 2.3 0 4.3 1.9 4.3 4.5 0 5-7.6 10.3-7.6 10.3z"/></svg>',
+    flower: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><g fill="#ffb9d4"><ellipse cx="12" cy="6.6" rx="2.1" ry="4.2"/><ellipse cx="12" cy="17.4" rx="2.1" ry="4.2"/><ellipse cx="6.6" cy="12" rx="4.2" ry="2.1"/><ellipse cx="17.4" cy="12" rx="4.2" ry="2.1"/><ellipse cx="8.2" cy="8.2" rx="2" ry="3.6" transform="rotate(-45 8.2 8.2)"/><ellipse cx="15.8" cy="15.8" rx="2" ry="3.6" transform="rotate(-45 15.8 15.8)"/></g><circle cx="12" cy="12" r="2.1" fill="#ffe08a"/></svg>',
     heart: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="#ff5c8a" d="M12 21S3.5 15.2 3.5 9.5C3.5 6.4 5.9 4.2 8.6 4.2c1.5 0 2.6.7 3.4 1.7.8-1 1.9-1.7 3.4-1.7 2.7 0 5.1 2.2 5.1 5.3C20.5 15.2 12 21 12 21z"/></svg>',
     sparkle: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="#ffd166" d="M12 2.5c1 4.4 2.1 5.5 6.5 6.5-4.4 1-5.5 2.1-6.5 6.5-1-4.4-2.1-5.5-6.5-6.5 4.4-1 5.5-2.1 6.5-6.5z"/></svg>',
     soft: '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="8" cy="15" r="4" fill="#ffdce9"/><circle cx="15" cy="9" r="5" fill="#dfe9ff" opacity=".85"/></svg>'
@@ -927,9 +1240,10 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       chars: [],
       lines: [],
       ses: [],
-      win: { theme: 'normal', showName: true, fontScale: 1, pos: 'bottom' },
+      win: { theme: 'normal', showName: true, fontScale: 1, pos: 'bottom', safe: { preset: 'none', b: 0, t: 0, r: 0, guide: true, guidePlay: false } },
       fit: 'contain',
       auto: { enabled: false, sec: 3 },
+      end: { wait: 3 },            // 最後のセリフ後、「もう一度」を出すまでの秒数（録画用）
       text: { typewriter: true, se: true, seKind: 'none' },
       idleSway: true
     };
@@ -1026,7 +1340,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
           v: 2, savedAt: Date.now(),
           bgSlots: state.bgSlots, bgIndex: state.bgIndex, bgColor: state.bgColor,
           chars: state.chars, lines: state.lines, win: state.win, fit: state.fit,
-          ses: state.ses, auto: state.auto, text: state.text
+          ses: state.ses, auto: state.auto, text: state.text, end: state.end
         }));
         const d = new Date();
         label.textContent = '自動保存: ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -1055,11 +1369,13 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       state.ses = Array.isArray(d.ses) ? d.ses : [];
       state.auto = Object.assign({ enabled: false, sec: 3 }, d.auto || {});
       state.text = Object.assign({ typewriter: true, se: true, seKind: 'none' }, d.text || {});
+      state.end = Object.assign({ wait: 3 }, d.end || {});   // 終了演出までの待ち（録画用）
       state.idleSway = d.idleSway !== false;
       state.chars.forEach((c) => {
         if (!Array.isArray(c.slots)) c.slots = defaultSlots();
         if (!c.slotActive) c.slotActive = 'normal';
         if (!c.viewMode) c.viewMode = 'custom';
+        if (typeof c.sway !== 'boolean') c.sway = true;   // 個別の揺れ（旧データ互換）
       });
       if (state.lines.length === 0) state.lines.push(newLine());
       selectedCharId = state.chars[0] ? state.chars[0].id : null;
@@ -1072,7 +1388,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     download('talk-scene-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify({
       v: 2, bgSlots: state.bgSlots, bgIndex: state.bgIndex, bgColor: state.bgColor,
       chars: state.chars, lines: state.lines, win: state.win, fit: state.fit,
-      ses: state.ses, auto: state.auto, text: state.text
+      ses: state.ses, auto: state.auto, text: state.text, end: state.end
     }));
     toast('プロジェクトを保存しました');
   }
@@ -1096,11 +1412,13 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       state.ses = Array.isArray(d.ses) ? d.ses : [];
       state.auto = Object.assign({ enabled: false, sec: 3 }, d.auto || {});
       state.text = Object.assign({ typewriter: true, se: true, seKind: 'none' }, d.text || {});
+      state.end = Object.assign({ wait: 3 }, d.end || {});   // 終了演出までの待ち（録画用）
       state.idleSway = d.idleSway !== false;
       state.chars.forEach((c) => {
         if (!Array.isArray(c.slots)) c.slots = defaultSlots();
         if (!c.slotActive) c.slotActive = 'normal';
         if (!c.viewMode) c.viewMode = 'custom';
+        if (typeof c.sway !== 'boolean') c.sway = true;   // 個別の揺れ（旧データ互換）
       });
       selectedCharId = state.chars[0] ? state.chars[0].id : null;
       editLineIndex = 0; openLineId = null;
@@ -1134,6 +1452,12 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     stage.appendChild(dlg);
     stage.appendChild(choiceBox);
     stage.appendChild(fxLayer);
+    const safeLayer = el('div', 'safe-layer');
+    safeLayer.id = 'safeLayer';
+    safeLayer.innerHTML =
+      '<div class="safe-band t"></div><div class="safe-band b"></div><div class="safe-band r"></div>' +
+      '<div class="safe-rect"></div><div class="safe-label" id="safeLabel"></div>';
+    stage.appendChild(safeLayer);
     stage.appendChild(el('div', 'stage-hint', '立ち絵をタップ＝選択 / ドラッグ＝移動（キャラ・立ち絵タブ時のみ）'));
     // メモ: 予備レイヤーを足したい場合は appendChild(el('div','layer')) を追加
   })();
@@ -1191,6 +1515,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       const allowed = activeLine && Array.isArray(activeLine.visibleChars) ? activeLine.visibleChars : null;
       node.style.display = (c.visible && (!allowed || allowed.includes(c.id))) ? 'block' : 'none';
       node.style.zIndex = String(c.z || i + 1);
+      node.classList.toggle('no-sway', c.sway === false);   // キャラ個別の揺れOFF
       node.style.left = (c.x * 100) + '%';
       node.style.top = (c.y * 100) + '%';
       const dispH = Math.max(10, h * (c.scale || 0.8));
@@ -1328,6 +1653,69 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     dlg.classList.add('line-in');
   }
 
+  /* ======================= セーフエリア（動画アプリのUI回避） =======================
+   * TikTok / リール / ショートは画面の下側・右側にUIが重なる。
+   * --safe-b / --safe-t / --safe-r を stage にセットすると、
+   * セリフ枠（.dialogue）と地の文、ガイド枠が自動で内側へ寄る。
+   * ========================================================================== */
+  const SAFE_PRESETS = {
+    none:   { b: 0,  t: 0,  r: 0 },
+    tiktok: { b: 25, t: 7,  r: 13 },
+    reels:  { b: 35, t: 14, r: 8 },
+    shorts: { b: 35, t: 15, r: 18 }
+  };
+  const SAFE_PRESET_NAME = { none: '標準', tiktok: 'TikTok', reels: 'Instagramリール', shorts: 'YouTubeショート', custom: 'カスタム' };
+  let forceGuide = false;      // 再生中に「枠」ボタンで一時表示
+
+  function safeCfg() {
+    if (!state.win.safe || typeof state.win.safe !== 'object') {
+      state.win.safe = { preset: 'none', b: 0, t: 0, r: 0, guide: true, guidePlay: false };
+    }
+    const s = state.win.safe;
+    ['b', 't', 'r'].forEach((k) => { if (typeof s[k] !== 'number' || !isFinite(s[k])) s[k] = 0; });
+    if (typeof s.guide !== 'boolean') s.guide = true;
+    if (typeof s.guidePlay !== 'boolean') s.guidePlay = false;
+    if (!s.preset) s.preset = 'none';
+    return s;
+  }
+  function applySafeVars() {
+    const s = safeCfg();
+    stage.style.setProperty('--safe-b', (s.b || 0) + 'cqh');
+    stage.style.setProperty('--safe-t', (s.t || 0) + 'cqh');
+    stage.style.setProperty('--safe-r', (s.r || 0) + 'cqw');
+    applySafeGuide();
+  }
+  function applySafeGuide() {
+    const s = safeCfg();
+    const on = playing ? (!!s.guidePlay || forceGuide) : !!s.guide;
+    stage.classList.toggle('show-safe', on && (s.b > 0 || s.t > 0 || s.r > 0));
+    const lab = $('#safeLabel');
+    if (lab) {
+      const parts = [];
+      if (s.b) parts.push('下' + s.b + '%');
+      if (s.t) parts.push('上' + s.t + '%');
+      if (s.r) parts.push('右' + s.r + '%');
+      lab.textContent = parts.length ? (SAFE_PRESET_NAME[s.preset] || 'セーフエリア') + 'で隠れる範囲：' + parts.join(' / ') : '';
+    }
+  }
+  function syncSafeUI() {
+    const s = safeCfg();
+    const set = (sel, v) => { const n = $(sel); if (n) n.value = v; };
+    set('#safePreset', s.preset);
+    set('#safeBRange', s.b); set('#safeTRange', s.t); set('#safeRRange', s.r);
+    const bl = $('#safeBLabel'); if (bl) bl.textContent = s.b + '%';
+    const tl = $('#safeTLabel'); if (tl) tl.textContent = s.t + '%';
+    const rl = $('#safeRLabel'); if (rl) rl.textContent = s.r + '%';
+    const g = $('#safeGuideToggle'); if (g) g.checked = !!s.guide;
+    const gp = $('#safeGuidePlayToggle'); if (gp) gp.checked = !!s.guidePlay;
+  }
+  function setSafe(patch, opts) {
+    const s = safeCfg();
+    Object.assign(s, patch || {});
+    applySafeVars(); syncSafeUI(); persist();
+    if (!(opts && opts.silent)) renderStage(false);
+  }
+
   function renderStage(rebuildChars) {
     applyBackground();
     syncChars(!!rebuildChars);
@@ -1341,13 +1729,71 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   }
 
   /* ======================= 5. エフェクト ======================= */
-  const HEART_SVG =
-    '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
-    '<defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">' +
-    '<stop offset="0" stop-color="#ff9ec4"/><stop offset=".55" stop-color="#ff5c8a"/><stop offset="1" stop-color="#e8396b"/>' +
-    '</linearGradient></defs>' +
-    '<path fill="url(#hg)" d="M16 28S3.2 19.6 3.2 11.6C3.2 6.9 6.8 3.6 11 3.6c2.3 0 4.1 1.1 5 2.6.9-1.5 2.7-2.6 5-2.6 4.2 0 7.8 3.3 7.8 8 0 8-12.8 16.4-12.8 16.4z"/>' +
-    '<path fill="rgba(255,255,255,.55)" d="M9.4 7.2c1.5-.9 3.3-.5 3.9.5-1.5.2-3 .9-3.9 2.4-.6-.6-.7-2.1 0-2.9z"/></svg>';
+  /* ハート：白フチ＋ツヤ＋グラデの「ステッカー風」。id重複を避けるため毎回ユニークIDを振る */
+  const HEART_PAL = [
+    ['#ffd7e7', '#ff7fb0', '#f8467f', 'rgba(255,255,255,.92)'],   // ピンク
+    ['#ffe5d6', '#ff9f9c', '#ff6484', 'rgba(255,255,255,.9)'],    // ピーチピンク
+    ['#ffe2f5', '#e6a4ff', '#b06bff', 'rgba(255,255,255,.9)'],    // ラベンダー
+    ['#ffeef3', '#ffa6c8', '#ff749f', 'rgba(255,255,255,.95)']    // ライトローズ
+  ];
+  const HEART_PATH = 'M16 28.4c-.6 0-1.15-.2-1.6-.55C10 24.3 2.6 18.4 2.6 11.8 2.6 7 6.3 3.4 10.8 3.4c2.1 0 4 .95 5.2 2.55 1.2-1.6 3.1-2.55 5.2-2.55 4.5 0 8.2 3.6 8.2 8.4 0 6.6-7.4 12.5-11.8 16.05-.45.35-1 .55-1.6.55z';
+  let heartSeq = 0;
+  function heartSvg(pal) {
+    const id = 'h' + (++heartSeq);
+    const [c1, c2, c3, stroke] = pal || HEART_PAL[0];
+    return '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+      '<defs>' +
+      '<linearGradient id="g' + id + '" x1=".18" y1=".02" x2=".82" y2="1">' +
+      '<stop offset="0" stop-color="' + c1 + '"/><stop offset=".48" stop-color="' + c2 + '"/><stop offset="1" stop-color="' + c3 + '"/>' +
+      '</linearGradient>' +
+      '<radialGradient id="l' + id + '" cx=".33" cy=".27" r=".46">' +
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".95"/>' +
+      '<stop offset=".55" stop-color="#ffffff" stop-opacity=".32"/>' +
+      '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>' +
+      '</radialGradient>' +
+      '</defs>' +
+      '<path d="' + HEART_PATH + '" fill="url(#g' + id + ')" stroke="' + stroke + '" stroke-width="1.5" stroke-opacity=".92" stroke-linejoin="round"/>' +
+      '<ellipse cx="10.5" cy="10.1" rx="3.4" ry="2.15" fill="url(#l' + id + ')" transform="rotate(-26 10.5 10.1)"/>' +
+      '<circle cx="23.3" cy="9.1" r="1.15" fill="#ffffff" opacity=".62"/>' +
+      '<circle cx="9.6" cy="16.4" r=".75" fill="#ffffff" opacity=".34"/>' +
+      '</svg>';
+  }
+  /* 4方向に尖った小さなきらめき（ハート・ほわほわの飾り） */
+  const TWINKLE_SVG =
+    '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+    '<path fill="#ffffff" d="M12 1.2c1 5.9 2 6.9 7.9 7.9-5.9 1-6.9 2-7.9 7.9-1-5.9-2-6.9-7.9-7.9 5.9-1 6.9-2 7.9-7.9z"/>' +
+    '<circle cx="19.2" cy="18.4" r="1.5" fill="#ffffff" opacity=".75"/>' +
+    '<circle cx="5.6" cy="19.2" r="1" fill="#ffffff" opacity=".6"/>' +
+    '</svg>';
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  /* ---- シンプル用：フラットなハート・花（線を足さず、塗りだけで見せる） ---- */
+  const SIMPLE_HEART_PATH = 'M12 20.6S4.3 15.3 4.3 10.1c0-2.7 2-4.8 4.5-4.8 1.5 0 2.8.78 3.2 1.95.4-1.17 1.7-1.95 3.2-1.95 2.5 0 4.5 2.1 4.5 4.8 0 5.2-7.7 10.5-7.7 10.5z';
+  const SIMPLE_HEART_COLORS = [
+    ['#ff9ebf', '#ff7aa8'],
+    ['#ffb3c9', '#ff95b4'],
+    ['#f7a8c4', '#ee8fb2'],
+    ['#ffc2d4', '#ffa3bd']
+  ];
+  function simpleHeartSvg(pal) {
+    const [fill, stroke] = pal || SIMPLE_HEART_COLORS[0];
+    return '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+      '<path d="' + SIMPLE_HEART_PATH + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width=".9" stroke-linejoin="round"/></svg>';
+  }
+  /* 花は「＊」に見える細長い花びら5枚（中心の点なし） */
+  // 画像の参考に寄せて：濃いピンク寄り＋やや紫がかったピンク
+  const FLOWER_COLORS = ['#ff4f95', '#ff6ba8', '#ef7fb8', '#f79ac4', '#e87bd0', '#ff8fb8'];
+  const FLOWER_PETAL = 'M12 12 C13.15 9.6 13.25 6.4 12 3.1 C10.75 6.4 10.85 9.6 12 12 Z';
+  function flowerSvg(color, petals) {
+    const c = color || FLOWER_COLORS[0];
+    const n = petals || 5;
+    let paths = '';
+    for (let i = 0; i < n; i++) {
+      paths += '<path d="' + FLOWER_PETAL + '" transform="rotate(' + (i * (360 / n)) + ' 12 12)"/>';
+    }
+    return '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' +
+      '<g fill="' + c + '">' + paths + '</g></svg>';
+  }
   const SPARK_SVG =
     '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
     '<path fill="#fff6c9" d="M16 1.5c1.4 6.1 3 7.7 9.1 9.1-6.1 1.4-7.7 3-9.1 9.1-1.4-6.1-3-7.7-9.1-9.1 6.1-1.4 7.7-3 9.1-9.1z"/>' +
@@ -1409,18 +1855,87 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     if (!k || k === 'none') return;
     const a = (line.fxTarget === 'center') ? { x: 0.5, y: 0.42 } : fxAnchor(anchorKey || line.charId);
 
-    if (k === 'heart') {
-      const n = 5;
+    if (k === 'heart2') {
+      // シンプル：数個のハートがふわっと舞い上がるだけ（光・きらめきなし）
+      const n = 3;
       for (let i = 0; i < n; i++) {
-        const node = el('div', 'fx fx-heart', HEART_SVG);
-        const dx = (i - (n - 1) / 2) * 5.6;                 // cqw 相当の散らし（%で指定）
-        node.style.left = (a.x * 100 + dx + (Math.random() * 2 - 1) * 1.6) + '%';
-        node.style.top = (a.y * 100 + (Math.random() * 4 - 2)) + '%';
-        node.style.setProperty('--delay', (i * 0.14).toFixed(2) + 's');
-        node.style.setProperty('--dur', (1.7 + Math.random() * 0.5).toFixed(2) + 's');
-        node.style.setProperty('--rot', ((Math.random() * 2 - 1) * 12).toFixed(1) + 'deg');
+        const t = (i + 0.5) / n;
+        const node = el('div', 'fx fx-heart-s', simpleHeartSvg(SIMPLE_HEART_COLORS[i % SIMPLE_HEART_COLORS.length]));
+        node.style.left = (a.x * 100 + (t - 0.5) * 26 + rnd(-2.2, 2.2)) + '%';
+        node.style.top = (a.y * 100 + rnd(-3, 5) + Math.abs(t - 0.5) * 4.4) + '%';
+        node.style.setProperty('--sc', rnd(0.62, 1.08).toFixed(2));
+        node.style.setProperty('--sway', rnd(-2.4, 2.4).toFixed(1) + 'cqh');
+        node.style.setProperty('--rot', rnd(-14, 14).toFixed(1) + 'deg');
+        node.style.setProperty('--op', rnd(0.78, 0.94).toFixed(2));
+        node.style.setProperty('--delay', (i * 0.17 + rnd(0, 0.06)).toFixed(2) + 's');
+        node.style.setProperty('--dur', rnd(2.1, 2.5).toFixed(2) + 's');
         fxLayer.appendChild(node);
-        setTimeout(() => node.remove(), 2800);
+        setTimeout(() => node.remove(), 3400);
+      }
+    } else if (k === 'flower') {
+      // シンプル：＊のような花が「ぽっ」と出て、ひらひら舞う
+      const n = 4;                                   // 前に比べて3個減らす（画面を隠しすぎない）
+      const spots = [
+        { dx: -12, dy: 1.5, sc: 1.5 },
+        { dx: 9, dy: -2.5, sc: 0.9 },
+        { dx: 3, dy: 6, sc: 1.12 },
+        { dx: -7, dy: -5.5, sc: 0.7 }
+      ];
+      for (let i = 0; i < n; i++) {
+        const sp = spots[i % spots.length];
+        const col = FLOWER_COLORS[Math.floor(Math.random() * FLOWER_COLORS.length)];
+        const node = el('div', 'fx fx-flower-s', flowerSvg(col, Math.random() < 0.5 ? 5 : 6));
+        node.style.left = (a.x * 100 + sp.dx + rnd(-2.5, 2.5)) + '%';
+        node.style.top = (a.y * 100 + sp.dy + rnd(-2, 2)) + '%';
+        node.style.setProperty('--sc', (sp.sc * rnd(0.9, 1.12)).toFixed(2));
+        node.style.setProperty('--sway', rnd(-2.6, 2.6).toFixed(1) + 'cqh');
+        node.style.setProperty('--rot', rnd(-40, 40).toFixed(0) + 'deg');
+        node.style.setProperty('--op', rnd(0.72, 0.95).toFixed(2));
+        node.style.setProperty('--delay', (i * 0.14 + rnd(0, 0.08)).toFixed(2) + 's');
+        node.style.setProperty('--dur', rnd(2.2, 2.6).toFixed(2) + 's');
+        fxLayer.appendChild(node);
+        setTimeout(() => node.remove(), 3400);
+      }
+    } else if (k === 'heart') {
+      // ふわっとした光の玉→ぷにっと弾むハート→きらめき、の3層で「可愛い」を作る
+      const glow = el('div', 'fx fx-heartglow');
+      glow.style.left = (a.x * 100) + '%';
+      glow.style.top = (a.y * 100 + 3) + '%';
+      glow.style.setProperty('--dur', '2.35s');
+      fxLayer.appendChild(glow);
+      setTimeout(() => glow.remove(), 3000);
+
+      const n = 4;
+      const pal = HEART_PAL[Math.floor(Math.random() * HEART_PAL.length)];
+      const pal2 = HEART_PAL[Math.floor(Math.random() * HEART_PAL.length)];
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0.5 : i / (n - 1);
+        const big = i === 2;                                 // 1個だけ大きめ（主役）
+        const node = el('div', 'fx fx-heart', heartSvg(i % 3 === 0 ? pal2 : pal));
+        const dx = (t - 0.5) * 27 + rnd(-2.2, 2.2);          // %指定の散らし（重なり過ぎないように広め）
+        const dy = rnd(-4.5, 3) + Math.abs(t - 0.5) * 4.6;
+        node.style.left = (a.x * 100 + dx) + '%';
+        node.style.top = (a.y * 100 + dy) + '%';
+        node.style.setProperty('--sc', (big ? 1.3 : rnd(0.5, 0.86)).toFixed(2));
+        node.style.setProperty('--sway', (rnd(-2.6, 2.6)).toFixed(1) + 'cqh');
+        node.style.setProperty('--delay', (i * 0.1 + rnd(0, 0.07)).toFixed(2) + 's');
+        node.style.setProperty('--dur', (1.9 + Math.random() * 0.45).toFixed(2) + 's');
+        node.style.setProperty('--rot', (rnd(-15, 15)).toFixed(1) + 'deg');
+        fxLayer.appendChild(node);
+        setTimeout(() => node.remove(), 3000);
+      }
+      for (let i = 0; i < 4; i++) {                          // 周りの小さなきらめき
+        const tw = el('div', 'fx fx-htw', TWINKLE_SVG);
+        const ang = Math.random() * Math.PI * 2;
+        const rad = Math.pow(Math.random(), 0.55) * 19;
+        tw.style.left = (a.x * 100 + Math.cos(ang) * rad) + '%';
+        tw.style.top = (a.y * 100 + Math.sin(ang) * rad * 0.85 - rnd(0, 4)) + '%';
+        tw.style.setProperty('--sc', rnd(0.55, 1.1).toFixed(2));
+        tw.style.setProperty('--sway', rnd(-1.6, 1.6).toFixed(1) + 'cqh');
+        tw.style.setProperty('--delay', rnd(0.1, 0.6).toFixed(2) + 's');
+        tw.style.setProperty('--dur', rnd(1.2, 1.7).toFixed(2) + 's');
+        fxLayer.appendChild(tw);
+        setTimeout(() => tw.remove(), 2600);
       }
     } else if (k === 'sparkle') {
       const flash = el('div', 'fx fx-flash');
@@ -1428,7 +1943,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       flash.style.top = (a.y * 100) + '%';
       fxLayer.appendChild(flash);
       setTimeout(() => flash.remove(), 900);
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 11; i++) {
         const node = el('div', 'fx fx-spark', SPARK_SVG);
         const ang = Math.random() * Math.PI * 2;
         const rad = Math.pow(Math.random(), 0.6) * 17;
@@ -1441,21 +1956,66 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
         setTimeout(() => node.remove(), 1800);
       }
     } else if (k === 'soft') {
-      // ほわほわ～：話者の周囲を淡い光の玉がゆっくり揺れながら上昇
-      const n = 10;
+      // ほわほわ～：淡いもや＋パステルの光の玉（玉ボケ）＋輪＋きらめき
+      // ※ 仕様どおり 1.25〜1.5秒で消え、1.85秒以内にDOMから除去する
+      const haze = el('div', 'fx fx-haze');
+      haze.style.left = (a.x * 100) + '%';
+      haze.style.top = (a.y * 100 + 5) + '%';
+      haze.style.setProperty('--dur', '1.5s');
+      fxLayer.appendChild(haze);
+      setTimeout(() => haze.remove(), 1800);
+
+      const SOFTPAL = [
+        ['rgba(255,214,232,.9)', 'rgba(214,226,255,.52)', 'rgba(255,190,220,.62)'],   // ピンク→ブルー
+        ['rgba(228,214,255,.9)', 'rgba(255,232,214,.5)', 'rgba(214,190,255,.58)'],    // ラベンダー→ピーチ
+        ['rgba(210,242,255,.88)', 'rgba(232,214,255,.5)', 'rgba(186,228,255,.55)'],   // アクア→ラベンダー
+        ['rgba(255,240,216,.88)', 'rgba(255,214,232,.52)', 'rgba(255,226,182,.5)']    // クリーム→ピンク
+      ];
+      const n = 8;
       for (let i = 0; i < n; i++) {
-        const node = el('div', 'fx fx-soft');
         const side = (i % 2 ? 1 : -1);
-        const dx = side * (5 + (i % 5) * 3.2) + (Math.random() * 4 - 2);
-        const dy = 3 + (i % 4) * 4.2 + Math.random() * 2;
+        const dx = side * (4.5 + (i % 6) * 2.6) + rnd(-2, 2);
+        const dy = 2 + (i % 4) * 4 + rnd(-2, 3.5);
+        const pal = SOFTPAL[i % SOFTPAL.length];
+        const node = el('div', 'fx fx-bokeh');
         node.style.left = (a.x * 100 + dx) + '%';
         node.style.top = (a.y * 100 + dy) + '%';
-        node.style.setProperty('--sz', (3.8 + Math.random() * 4.2).toFixed(1) + 'cqh');
-        node.style.setProperty('--sway', (side * (1.2 + Math.random() * 2.3)).toFixed(1) + 'cqh');
-        node.style.setProperty('--delay', (i * 0.04).toFixed(2) + 's');
-        node.style.setProperty('--dur', (1.25 + Math.random() * 0.25).toFixed(2) + 's');
+        node.style.setProperty('--sz', rnd(3.4, 8.6).toFixed(1) + 'cqh');
+        node.style.setProperty('--c1', pal[0]);
+        node.style.setProperty('--c2', pal[1]);
+        node.style.setProperty('--glow', pal[2]);
+        node.style.setProperty('--blur', rnd(0, 0.22).toFixed(2) + 'cqh');
+        node.style.setProperty('--sway', (side * rnd(1, 3.4)).toFixed(1) + 'cqh');
+        node.style.setProperty('--delay', rnd(0, 0.16).toFixed(2) + 's');
+        node.style.setProperty('--dur', rnd(1.18, 1.34).toFixed(2) + 's');
         fxLayer.appendChild(node);
         setTimeout(() => node.remove(), 1850);
+      }
+      for (let i = 0; i < 2; i++) {                        // ゆっくり広がる淡い輪
+        const ring = el('div', 'fx fx-ring');
+        const ang = rnd(0, Math.PI * 2);
+        const rad = rnd(4, 13);
+        ring.style.left = (a.x * 100 + Math.cos(ang) * rad) + '%';
+        ring.style.top = (a.y * 100 + Math.sin(ang) * rad * 0.8 + rnd(-2, 4)) + '%';
+        ring.style.setProperty('--sz', rnd(5, 10).toFixed(1) + 'cqh');
+        ring.style.setProperty('--rc', ['rgba(255,216,238,.8)', 'rgba(226,214,255,.75)', 'rgba(208,240,255,.7)'][i % 3]);
+        ring.style.setProperty('--delay', rnd(0, 0.12).toFixed(2) + 's');
+        ring.style.setProperty('--dur', rnd(1.18, 1.36).toFixed(2) + 's');
+        fxLayer.appendChild(ring);
+        setTimeout(() => ring.remove(), 1850);
+      }
+      for (let i = 0; i < 4; i++) {                        // きらめき
+        const tw = el('div', 'fx fx-tw', TWINKLE_SVG);
+        const ang = rnd(0, Math.PI * 2);
+        const rad = Math.pow(Math.random(), 0.5) * 20;
+        tw.style.left = (a.x * 100 + Math.cos(ang) * rad) + '%';
+        tw.style.top = (a.y * 100 + Math.sin(ang) * rad * 0.85 + rnd(-2, 5)) + '%';
+        tw.style.setProperty('--sc', rnd(0.5, 1.05).toFixed(2));
+        tw.style.setProperty('--sway', rnd(-1.4, 1.4).toFixed(1) + 'cqh');
+        tw.style.setProperty('--delay', rnd(0.05, 0.36).toFixed(2) + 's');
+        tw.style.setProperty('--dur', rnd(1.02, 1.14).toFixed(2) + 's');
+        fxLayer.appendChild(tw);
+        setTimeout(() => tw.remove(), 1850);
       }
     }
   }
@@ -1540,14 +2100,19 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   /* ======================= 6. 再生モード ======================= */
   const playerRoot = $('#playerRoot');
   const btnExit = $('#btnExitPlay');
+  const btnSafePlay = $('#btnSafePlay');
   // ✕ボタンは録画に映えないよう再生開始1.5秒後に自動非表示。長押しで一時的に戻す。
   let exitHideTimer = null;
   function scheduleExitHide() {
     clearTimeout(exitHideTimer);
-    exitHideTimer = setTimeout(() => btnExit.classList.add('auto-hide'), 1500);
+    exitHideTimer = setTimeout(() => {
+      btnExit.classList.add('auto-hide');
+      if (btnSafePlay) btnSafePlay.classList.add('auto-hide');
+    }, 1500);
   }
   function peekExitButton() {
     btnExit.classList.remove('auto-hide');
+    if (btnSafePlay) btnSafePlay.classList.remove('auto-hide');
     scheduleExitHide();
   }
   window.peekExitButton = peekExitButton;   // テスト用
@@ -1596,8 +2161,12 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     stage.classList.remove('stage-editing');
     btnExit.classList.remove('hidden');
     btnExit.classList.remove('auto-hide');
+    if (btnSafePlay) { btnSafePlay.classList.remove('hidden'); btnSafePlay.classList.remove('auto-hide'); }
+    forceGuide = false;
+    applySafeGuide();
     scheduleExitHide();
     endOverlay.classList.add('hidden');
+    clearEndTimer();
     playIndex = fromStart === false ? playIndex : 0;
     showLine(playIndex);
     renderStatus();
@@ -1608,6 +2177,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     }
   }
   function exitPlay() {
+    clearEndTimer();
     playing = false;
     document.body.classList.remove('playing');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -1618,6 +2188,8 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     playerRoot.classList.add('hidden');
     btnExit.classList.add('hidden');
     btnExit.classList.remove('auto-hide');
+    if (btnSafePlay) { btnSafePlay.classList.add('hidden'); btnSafePlay.classList.remove('auto-hide'); }
+    forceGuide = false;
     clearTimeout(exitHideTimer);
     endOverlay.classList.add('hidden');
     clearAuto();
@@ -1635,14 +2207,25 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       // 最後のセリフ表示後 → 終了演出（連打の誤タップを防ぐため700msだけ入力ガード）
       if (!endOverlay.classList.contains('hidden')) return;
       clearAuto();
-      endOverlay.classList.remove('hidden');
-      endOverlay.classList.add('guard');
-      setTimeout(() => endOverlay.classList.remove('guard'), 700);
+      // 録画用：設定した秒数だけ「もう一度」を出さずに待つ。待っている間にタップしたら即表示。
+      if (endTimer) return;      // 待機中はタップを無視して、最後のセリフをしばらく見せる
+      const wait = (state.end && typeof state.end.wait === 'number') ? state.end.wait : 3;
+      if (wait <= 0) { showEndOverlay(); return; }
+      endTimer = setTimeout(() => { endTimer = null; showEndOverlay(); }, wait * 1000);
       return;
     }
     playIndex++;
     showLine(playIndex);
     renderStatus();
+  }
+  let endTimer = null;
+  function clearEndTimer() { if (endTimer) { clearTimeout(endTimer); endTimer = null; } }
+  function showEndOverlay() {
+    clearEndTimer();
+    if (!endOverlay.classList.contains('hidden')) return;
+    endOverlay.classList.remove('hidden');
+    endOverlay.classList.add('guard');
+    setTimeout(() => endOverlay.classList.remove('guard'), 700);
   }
   function renderStatus() {
     $('#lineCounter').textContent = (state.lines.length ? (playing ? playIndex : editLineIndex) + 1 : 0) + ' / ' + state.lines.length;
@@ -1663,6 +2246,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   });
   $('#btnReplayAll').addEventListener('click', (e) => {
     e.stopPropagation();
+    clearEndTimer();
     endOverlay.classList.add('hidden');
     playIndex = 0;
     showLine(0);
@@ -1670,6 +2254,15 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   });
   $('#btnBackToEdit').addEventListener('click', (e) => { e.stopPropagation(); exitPlay(); });
   btnExit.addEventListener('click', (e) => { e.stopPropagation(); exitPlay(); });
+  if (btnSafePlay) {
+    btnSafePlay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      forceGuide = !forceGuide;
+      applySafeGuide();
+      toast(forceGuide ? 'セーフエリアの枠を表示中（もう一度押すと隠れます）' : 'セーフエリアの枠を隠しました');
+      scheduleExitHide();
+    });
+  }
   document.addEventListener('keydown', (e) => {
     if (!playing) return;
     if (e.key === 'Escape') exitPlay();
@@ -1793,6 +2386,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     state.bgSlots.forEach((s, i) => {
       const t = el('div', 'thumb' + (i === state.bgIndex ? ' on' : ''));
       t.style.backgroundImage = 'url("' + s.img + '")';
+      t.appendChild(el('span', 'num', String(i + 1)));
       t.appendChild(el('span', 'lab', escapeHtml(s.name || ('背景' + (i + 1)))));
       t.addEventListener('click', () => {
         state.bgIndex = i;
@@ -1815,6 +2409,9 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       if (!f.type.startsWith('image/')) continue;
       try {
         const img = await shrinkBackground(f, 1080, 1920, 0.9);
+        if (isAnimatedImage(f) && (img.length / 1024 / 1024) > 2.5) {
+          toast('アニメGIFは容量が大きいため、自動保存に失敗する場合があります。設定→プロジェクト保存(.json)も併用してください。', 4200);
+        }
         state.bgSlots.push({ id: uid('bg'), name: f.name.replace(/\.[^.]+$/, ''), img: img });
         state.bgIndex = state.bgSlots.length - 1;
       } catch (e) {
@@ -1852,7 +2449,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     return {
       id: uid('ch'), name: 'キャラ' + (state.chars.length + 1), visible: true,
       x: 0.3 + 0.2 * state.chars.length, y: 0.6, scale: 0.8, flip: false,
-      z: state.chars.length + 1, viewMode: 'full', slotActive: 'normal', slots: defaultSlots()
+      z: state.chars.length + 1, viewMode: 'full', slotActive: 'normal', sway: true, slots: defaultSlots()
     };
   }
   function newLine() {
@@ -1871,6 +2468,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     });
   }
   function renderCharEditors() {
+    renderBulkHelp();
     const box = $('#charEditors');
     box.innerHTML = '';
     if (state.chars.length === 0) {
@@ -1915,7 +2513,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       const slotField = el('div', 'field');
       slotField.innerHTML = '<label>表情スロット（立ち絵）</label>';
       const grid = el('div', 'slot-grid');
-      c.slots.forEach((s) => {
+      c.slots.forEach((s, si) => {
         const cell = el('div', 'slot' + (s.key === c.slotActive ? ' on' : ''));
         if (s.img) {
           const im = el('img');
@@ -1924,7 +2522,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
         } else {
           cell.appendChild(el('span', 'empty', '＋'));
         }
-        cell.appendChild(el('div', 'cap', escapeHtml(s.label)));
+        cell.appendChild(el('div', 'cap', (si + 1) + '. ' + escapeHtml(s.label)));
         const fileInput = el('input');
         fileInput.type = 'file';
         fileInput.accept = 'image/png,image/apng,image/*';
@@ -1935,7 +2533,11 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
           try {
             const url = await prepareSprite(f);
             s.img = url;
-            if ((url.length / 1024 / 1024) > 3.4) toast('画像が大きいため自動保存できない場合があります。プロジェクト保存(.json)をご利用ください。', 3800);
+            if (isAnimatedImage(f) && (url.length / 1024 / 1024) > 2.5) {
+              toast('アニメGIF/WebPは容量が大きいため、自動保存に失敗する場合があります。設定→プロジェクト保存(.json)も併用してください。', 4200);
+            } else if ((url.length / 1024 / 1024) > 3.4) {
+              toast('画像が大きいため自動保存できない場合があります。プロジェクト保存(.json)をご利用ください。', 3800);
+            }
             c.slotActive = s.key;
             renderCharEditors(); renderStage(false); persist();
             toast('「' + s.label + '」に画像を設定しました');
@@ -1991,6 +2593,22 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       viewField.appendChild(viewSel);
       viewField.appendChild(el('p', 'sub', '顔の高さを保ったまま、全身／膝上／腰上／胸上／顔アップへ切り替えます。上半身だけの素材は「自由調整」と下部不透明ウィンドウの併用がおすすめです。'));
       body.appendChild(viewField);
+
+      // 揺れ（呼吸）の個別ON/OFF
+      const swayField = el('div', 'switch-row');
+      swayField.style.padding = '4px 0 8px';
+      const swayLbl = el('span', 'lbl');
+      swayLbl.innerHTML = 'このキャラの揺れ<small>呼吸するように少し揺れます（再生中）</small>';
+      const swayCb = el('input');
+      swayCb.type = 'checkbox';
+      swayCb.checked = c.sway !== false;
+      swayCb.addEventListener('change', (e) => {
+        c.sway = e.target.checked;
+        syncChars(false); renderChips(); persist();
+        toast((c.name || 'キャラ') + 'の揺れを' + (c.sway ? 'ON' : 'OFF') + 'にしました');
+      });
+      swayField.appendChild(swayLbl); swayField.appendChild(swayCb);
+      body.appendChild(swayField);
 
       // 位置・サイズ
       const posField = el('div', 'field');
@@ -2071,6 +2689,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
 
   /* --- セリフパネル --- */
   function renderLineList() {
+    renderBulkHelp();
     // クイック追加の話者 select を最新化（前回の選択を記憶）
     const qaWho = $('#qaWho');
     if (qaWho) {
@@ -2428,6 +3047,354 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   }
   $('#qaAdd').addEventListener('click', quickAddLine);
   $('#qaText').addEventListener('keydown', (e) => { if (e.key === 'Enter') quickAddLine(); });
+
+  /* ======================= テキスト一括入力 =======================
+     1行1セリフ：  名前｜表情番号｜セリフ｜効果
+     背景変更：     ＞背景番号        （次のセリフから背景が変わる）
+     地の文：       地｜テキスト  ／ 区切りなしの行
+     効果：なし / ハート / キラキラ / ほわほわ
+     ※ 表情番号・効果は省略可。表情は番号のほか「笑み」などの名前でもOK。
+     =============================================================== */
+  const BULK_FX_LABEL = { none: 'なし', heart2: 'ハート', flower: '花', heart: 'ハート（きらめき付き）', sparkle: 'キラキラ', soft: 'ほわほわ～' };
+  const BULK_CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+  const BULK_NUM_RE = /^[0-9０-９①-⑳]+$/;
+
+  function bulkNumOf(v) {
+    let t = String(v == null ? '' : v).trim();
+    t = t.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+    if (!t) return NaN;
+    if (t.length === 1) {
+      const ci = BULK_CIRCLED.indexOf(t);
+      if (ci >= 0) return ci + 1;
+    }
+    return /^\d+$/.test(t) ? parseInt(t, 10) : NaN;
+  }
+  function bulkTok(v) {
+    return String(v == null ? '' : v).replace(/[\s\u3000\[\]【】()（）\ufe0f]/g, '').toLowerCase();
+  }
+  function bulkEffectOf(raw) {
+    // 「ほわほわ～」「キラキラ✨」のような飾り付きもOK（効果列だけのゆるい判定）
+    const t = String(raw == null ? '' : raw).toLowerCase()
+      .replace(/[\s\u3000「」『』\[\]【】()（）\ufe0f～〜~☆★♪＊*]/g, '');
+    if (!t || t === 'なし' || t === '無し' || t === '無' || t === 'none' || t === '-' || t === '0' || t === '×') return 'none';
+    if (/(ハート|heart).*(きらめき|きらきら|キラキラ|deco|豪華|キラキラハート)/.test(t)) return 'heart';   // 旧・豪華ハート
+    if (/^(シンプル|simple)/.test(t)) return 'heart2';
+    if (/^(花|はな|フラワー|flower|floral|桜|さくら|roselle)/.test(t)) return 'flower';
+    if (/^(heart|ハート|はーと|♥|❤|💕|💗|💖|love|すき|好き|どきどき)/.test(t)) return 'heart2';        // 既定はシンプル
+    if (/^(sparkle|キラキラ|きらきら|✨|⭐|star|kira|きら)/.test(t)) return 'sparkle';
+    if (/^(soft|ほわ|ふわ|もこ|やわらか)/.test(t)) return 'soft';
+    return null;
+  }
+  function bulkFindChar(tok) {
+    const t = String(tok == null ? '' : tok).trim();
+    if (!t) return null;
+    if (BULK_NUM_RE.test(t)) {
+      const n = bulkNumOf(t);
+      if (!isNaN(n) && n >= 1 && n <= state.chars.length) return state.chars[n - 1];
+    }
+    const k = bulkTok(t);
+    return state.chars.find((c) => bulkTok(c.name) === k) || null;
+  }
+  function bulkResolveSlot(ch, raw) {
+    const t = String(raw == null ? '' : raw).trim();
+    if (!t) return { key: null, label: '', num: 0, ok: true };
+    if (BULK_NUM_RE.test(t)) {
+      const n = bulkNumOf(t);
+      if (ch && !isNaN(n) && n >= 1 && n <= ch.slots.length) {
+        const sl = ch.slots[n - 1];
+        return { key: sl.key, label: sl.label, num: n, ok: true };
+      }
+      return { key: null, label: t, num: n, ok: false, msg: '表情番号 ' + (isNaN(n) ? t : n) + ' は範囲外です（1〜' + (ch ? ch.slots.length : 0) + '）' };
+    }
+    if (ch) {
+      const k = bulkTok(t);
+      const hit = ch.slots.find((x) => bulkTok(x.label) === k) || ch.slots.find((x) => String(x.key).toLowerCase() === k);
+      if (hit) return { key: hit.key, label: hit.label, num: ch.slots.indexOf(hit) + 1, ok: true };
+    }
+    return { key: null, label: t, num: 0, ok: false, msg: '表情「' + t + '」が見つかりません（番号か表情名で指定）' };
+  }
+  /** テキストを解析して { lines, entries, counts } を返す（状態は変更しない） */
+  function parseBulkScript(src) {
+    const out = { lines: [], entries: [], counts: { line: 0, nar: 0, bg: 0, warn: 0, err: 0 } };
+    const rows = String(src == null ? '' : src).split(/\r?\n/);
+    const unknownNames = [];
+    let pendingBg = null, pendingBgRow = 0;
+    rows.forEach((raw, idx) => {
+      const rowNo = idx + 1;
+      const t = String(raw).trim();
+      if (!t) return;
+      if (/^(#|\/\/)/.test(t)) return;                     // コメント行
+
+      /* --- 背景変更行：＞2 --- */
+      const bgm = t.match(/^[＞>]\s*(.*)$/);
+      if (bgm) {
+        const v = bgm[1].trim();
+        if (!state.bgSlots.length) {
+          out.entries.push({ kind: 'err', row: rowNo, msg: '背景が登録されていません（背景タブで追加してください）' });
+          return;
+        }
+        const n = bulkNumOf(v);
+        const byNum = (!isNaN(n) && n >= 1 && n <= state.bgSlots.length) ? state.bgSlots[n - 1] : null;
+        const byName = byNum ? null : state.bgSlots.find((b) => bulkTok(b.name) === bulkTok(v));
+        if (!byNum && !byName) {
+          out.entries.push({ kind: 'err', row: rowNo, msg: '背景「' + v + '」が見つかりません（1〜' + state.bgSlots.length + ' の番号か背景名）' });
+          return;
+        }
+        pendingBg = byNum || byName; pendingBgRow = rowNo;
+        out.entries.push({ kind: 'bg', row: rowNo, text: '背景 → ' + (state.bgSlots.indexOf(pendingBg) + 1) + '：' + (pendingBg.name || '背景') });
+        out.counts.bg++;
+        return;
+      }
+
+      /* --- セリフ／地の文 --- */
+      let narr = false, nameRaw = '', slotRaw = '', text = '', fx = 'none', single = '';
+      const parts = t.split(/[｜|│]/).map((x) => x.trim());
+      if (parts.length === 1) {
+        const q = t.match(/^(.{1,20}?)[「『]([\s\S]*)[」』]$/);
+        if (q && bulkFindChar(q[1])) { nameRaw = q[1].trim(); text = q[2]; }
+        else { narr = true; text = t; }
+      } else {
+        nameRaw = parts[0];
+        if (!nameRaw || /^(地|地の文|ナレーション|語り|ト書き|narration|n)$/i.test(nameRaw)) narr = true;
+        let p = parts.slice(1);
+        // 末尾の列が効果なら切り離す
+        if (p.length >= 2) {
+          const ef = bulkEffectOf(p[p.length - 1]);
+          if (ef !== null) { fx = ef; p.pop(); }
+          else if (p.length >= 3 && String(p[p.length - 1]).length <= 12) {
+            out.entries.push({ kind: 'warn', row: rowNo, msg: '効果「' + p[p.length - 1] + '」は不明のため本文に含めました' });
+          }
+        }
+        if (narr) { text = p.join('｜'); }                    // 地の文は列を全部本文に
+        else if (p.length === 1) { single = p[0]; }
+        else if (p.length >= 2) {
+          // 1列目が「表情の指定」に見えるときだけ表情として扱う
+          // （「名前｜セリフ｜メモ」のような行の本文を壊さないため）
+          const ch0 = bulkFindChar(nameRaw);
+          const looksSlot = BULK_NUM_RE.test(p[0]) ||
+            !!(ch0 && ch0.slots.some((x) => bulkTok(x.label) === bulkTok(p[0]) || String(x.key).toLowerCase() === bulkTok(p[0])));
+          if (looksSlot) { slotRaw = p[0]; text = p.slice(1).join('｜'); }
+          else { text = p.join('｜'); }
+        }
+      }
+
+      const ch = narr ? null : bulkFindChar(nameRaw);
+      if (single) {
+        let asSlot = false;
+        if (ch) {
+          const guess = bulkResolveSlot(ch, single);
+          if (guess.ok && (guess.key || BULK_NUM_RE.test(single))) asSlot = true;
+        }
+        if (asSlot) slotRaw = single; else text = single;
+      }
+      if (!narr && !ch && nameRaw) {
+        if (!unknownNames.includes(nameRaw)) unknownNames.push(nameRaw);
+        if (slotRaw) out.entries.push({ kind: 'warn', row: rowNo, msg: '「' + nameRaw + '」は未登録のため、表情指定は使えません（名前だけ表示します）' });
+      }
+      if (narr && slotRaw) slotRaw = '';
+
+      let slotKey = null, slotLabel = '';
+      if (!narr && ch && slotRaw) {
+        const rs = bulkResolveSlot(ch, slotRaw);
+        if (rs.ok) { slotKey = rs.key; slotLabel = rs.num ? (rs.label + '（' + rs.num + '）') : rs.label; }
+        else out.entries.push({ kind: 'warn', row: rowNo, msg: rs.msg });
+      }
+
+      const line = normalizeLine({
+        id: uid('ln'),
+        charId: narr ? null : (ch ? ch.id : null),
+        name: narr ? '' : (ch ? ch.name : nameRaw),
+        text: text,
+        slot: narr ? null : slotKey,
+        fx: narr ? 'none' : fx,
+        fxTarget: 'speaker',
+        bg: pendingBg ? pendingBg.id : null,
+        visibleChars: null,
+        narration: narr,
+        narPos: 'top', narStyle: 'clear', se: null, choices: null
+      });
+      out.lines.push(line);
+      out.counts.line++;
+      if (narr) out.counts.nar++;
+      out.entries.push({
+        kind: 'line', row: rowNo, narr: narr, line: line,
+        who: narr ? '地の文' : (line.name || '（名前なし）'),
+        slot: slotLabel, fx: line.fx,
+        bg: pendingBg ? (pendingBg.name || '背景') : ''
+      });
+      pendingBg = null;
+    });
+    if (pendingBg) out.entries.push({ kind: 'warn', row: pendingBgRow, msg: 'この背景指定のあとにセリフがないため、背景は切り替わりません' });
+    if (unknownNames.length) out.entries.push({ kind: 'note', row: 0, msg: '未登録の名前：' + unknownNames.join('、') + '（名前だけの「自由入力」として追加します）' });
+    out.counts.warn = out.entries.filter((e) => e.kind === 'warn').length;
+    out.counts.err = out.entries.filter((e) => e.kind === 'err').length;
+    return out;
+  }
+
+  function renderBulkHelp() {
+    const box = $('#bulkHelp');
+    if (!box) return;
+    const charLine = (c, i) => '<span class="rowline"><b>キャラ' + (i + 1) + '　' + escapeHtml(c.name || '') + '</b>：' +
+      (c.slots.length
+        ? c.slots.map((sl, si) => '<span class="' + (sl.img ? '' : 'miss') + '">' + (si + 1) + '=' + escapeHtml(sl.label) + (sl.img ? '' : '（画像なし）') + '</span>').join('<span class="sep"> / </span>')
+        : '<span class="miss">表情がありません</span>') + '</span>';
+    const chars = state.chars.length
+      ? state.chars.map(charLine).join('')
+      : '<span class="miss">キャラが未登録です</span>';
+    const bgs = state.bgSlots.length
+      ? state.bgSlots.map((b, i) => '<span class="' + (b.img ? '' : 'miss') + '">' + (i + 1) + '=' + escapeHtml(b.name || ('背景' + (i + 1))) + '</span>').join('<span class="sep"> / </span>')
+      : '<span class="miss">背景が未登録です</span>';
+    box.innerHTML =
+      '<span class="rowline" style="margin-top:4px"><b>キャラ（名前の欄は番号でもOK）と表情番号</b></span>' + chars +
+      '<span class="rowline" style="margin-top:6px"><b>背景番号</b></span><span class="rowline">' + bgs + '</span>' +
+      '<span class="rowline" style="margin-top:6px"><b>効果</b>：なし / ハート / 花 / キラキラ / ほわほわ～</span>' +
+      '<span class="rowline"><span class="miss">「ハート」は数個ふわっと舞うシンプル版。きらめき付きにしたいときは「ハートきらめき」と書きます</span></span>' +
+      '<span class="rowline"><b>地の文</b>：<code class="k">地｜テキスト</code>（区切りなしの行も地の文）</span>' +
+      '<span class="rowline"><b>名前未登録</b>：名前だけの自由入力として追加（表情は指定できません）</span>';
+  }
+
+  function renderBulkPreview() {
+    const area = $('#bulkArea');
+    const box = $('#bulkPreview');
+    if (!area || !box) return;
+    const src = area.value;
+    if (!src.trim()) { box.innerHTML = '<span class="bp-empty">ここに反映内容のプレビューが出ます。</span>'; return; }
+    const p = parseBulkScript(src);
+    const html = [];
+    p.entries.slice(0, 120).forEach((en) => {
+      const num = en.row ? String(en.row) : '';
+      if (en.kind === 'line') {
+        const fxTxt = (!en.narr && en.fx && en.fx !== 'none') ? BULK_FX_LABEL[en.fx] : '';
+        html.push('<div class="bp-row"><span class="bp-num">' + num + '</span><span class="bp-txt"><span class="bp-who">' +
+          escapeHtml(en.who) + '</span>' + (en.slot ? '<span class="bp-slot">［' + escapeHtml(en.slot) + '］</span>' : '') +
+          (en.line.text ? '「' + escapeHtml(en.line.text) + '」' : '<span class="bp-slot">（本文なし）</span>') +
+          (en.bg ? '<span class="bp-bg">背景:' + escapeHtml(en.bg) + '</span>' : '') +
+          '</span><span class="bp-fx">' + escapeHtml(fxTxt) + '</span></div>');
+      } else if (en.kind === 'bg') {
+        html.push('<div class="bp-row r-bg"><span class="bp-num">' + num + '</span><span class="bp-txt">［背景］' + escapeHtml(en.text) + '</span><span class="bp-fx"></span></div>');
+      } else if (en.kind === 'err') {
+        html.push('<div class="bp-row r-err"><span class="bp-num">' + num + '</span><span class="bp-txt">エラー：' + escapeHtml(en.msg) + '</span><span class="bp-fx"></span></div>');
+      } else if (en.kind === 'warn') {
+        html.push('<div class="bp-row r-warn"><span class="bp-num">' + num + '</span><span class="bp-txt">注意：' + escapeHtml(en.msg) + '</span><span class="bp-fx"></span></div>');
+      } else {
+        html.push('<div class="bp-row r-note"><span class="bp-num">' + num + '</span><span class="bp-txt">' + escapeHtml(en.msg) + '</span><span class="bp-fx"></span></div>');
+      }
+    });
+    if (p.entries.length > 120) html.push('<div class="bulk-stat">…ほか ' + (p.entries.length - 120) + '件</div>');
+    html.push('<div class="bulk-stat">セリフ ' + p.counts.line + '件（地の文 ' + p.counts.nar + '件）・背景切替 ' + p.counts.bg + 'か所' +
+      (p.counts.warn ? '・注意 ' + p.counts.warn : '') +
+      (p.counts.err ? '・<strong>エラー ' + p.counts.err + '</strong>' : '') + '</div>');
+    box.innerHTML = html.join('');
+  }
+
+  function bulkInsert(ta, str) {
+    if (!ta) return;
+    const sPos = ta.selectionStart == null ? ta.value.length : ta.selectionStart;
+    const ePos = ta.selectionEnd == null ? ta.value.length : ta.selectionEnd;
+    ta.value = ta.value.slice(0, sPos) + str + ta.value.slice(ePos);
+    ta.focus();
+    try { ta.setSelectionRange(sPos + str.length, sPos + str.length); } catch (e) {}
+    renderBulkPreview();
+  }
+
+  function bulkSampleText() {
+    const names = state.chars.map((c) => c.name).filter((n) => n && n.trim());
+    const a = names[0] || 'ひなた';
+    const b = names[1] || a;
+    const rows = [
+      '# 1行1セリフ：名前｜表情番号｜セリフ｜効果（効果・番号は省略OK）',
+      a + '｜1｜せんぱい！ やっと見つけた〜！｜キラキラ',
+      b + '｜1｜どうしたんだ、そんなに急いで。',
+      a + '｜1｜今日ね、伝えたいことがあるの！｜ハート'
+    ];
+    if (state.bgSlots.length >= 2) {
+      rows.push('＞2');
+      rows.push(a + '｜1｜ここ、覚えてる？');
+    }
+    rows.push('地｜放課後の教室。窓の外は夕焼け色。');
+    if (names.length >= 2) rows.push('？？？｜' + a + 'の名前を呼ぶ声がした。');
+    return rows.join('\n');
+  }
+
+  function applyBulkScript(mode) {
+    const area = $('#bulkArea');
+    if (!area) return;
+    const parsed = parseBulkScript(area.value);
+    if (!parsed.lines.length) { toast('反映できるセリフがありません'); return; }
+    if (mode === 'replace') {
+      if (state.lines.length && !confirm('今のセリフ ' + state.lines.length + '件を、テキストの ' + parsed.lines.length + '件に置き換えます。よろしいですか？')) return;
+      state.lines = parsed.lines;
+      editLineIndex = 0;
+    } else {
+      state.lines = state.lines.concat(parsed.lines);
+      editLineIndex = state.lines.length - parsed.lines.length;
+    }
+    openLineId = null;
+    renderLineList(); renderStage(false); persist();
+    toast(parsed.lines.length + '件のセリフを' + (mode === 'replace' ? '置き換えました' : '追加しました') +
+      (parsed.counts.err ? '（エラー ' + parsed.counts.err + '件の行は反映されていません）' : ''), parsed.counts.err ? 3800 : 2200);
+  }
+
+  function exportBulkText() {
+    const area = $('#bulkArea');
+    if (!area) return;
+    const out = [];
+    let bgNow = null;
+    state.lines.forEach((l) => {
+      if (l.bg && l.bg !== bgNow) {
+        const n = state.bgSlots.findIndex((x) => x.id === l.bg) + 1;
+        if (n > 0) { out.push('＞' + n); bgNow = l.bg; }
+      }
+      if (l.narration) { out.push('地｜' + (l.text || '')); return; }
+      const ch = l.charId ? charById(l.charId) : null;
+      const name = (ch ? ch.name : (l.name || '')) || '？';
+      const n = (ch && l.slot) ? (ch.slots.findIndex((x) => x.key === l.slot) + 1) : 0;
+      const fx = (l.fx && l.fx !== 'none') ? BULK_FX_LABEL[l.fx] : '';
+      const cols = [name];
+      if (n > 0) { cols.push(String(n)); cols.push(l.text || ''); if (fx) cols.push(fx); }
+      else { cols.push(l.text || ''); if (fx) cols.push(fx); }
+      out.push(cols.join('｜'));
+    });
+    if (!out.length) { toast('書き出せるセリフがありません'); return; }
+    if (area.value.trim() && !confirm('入力中のテキストを、今のセリフの書き出しで置き換えます。よろしいですか？')) return;
+    area.value = out.join('\n');
+    renderBulkPreview();
+    toast('今のセリフをテキストに書き出しました（コピーして使えます）', 3000);
+  }
+
+  (function initBulkUI() {
+    const area = $('#bulkArea');
+    if (!area) return;
+    const DRAFT_KEY = 'advmaker.bulkdraft';
+    try {
+      const d = localStorage.getItem(DRAFT_KEY);
+      if (d) area.value = d;              // タブを移動しても書きかけを残す
+    } catch (e) {}
+    let timer = null;
+    area.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(renderBulkPreview, 180);
+      try { localStorage.setItem(DRAFT_KEY, area.value); } catch (e) {}
+    });
+    $('#btnBulkSep').addEventListener('click', () => bulkInsert(area, '｜'));
+    $('#btnBulkBg').addEventListener('click', () => bulkInsert(area, '＞'));
+    $('#btnBulkSample').addEventListener('click', () => {
+      if (area.value.trim() && !confirm('入力中のテキストをサンプルに置き換えます。よろしいですか？')) return;
+      area.value = bulkSampleText();
+      renderBulkPreview();
+    });
+    $('#btnBulkClear').addEventListener('click', () => {
+      if (area.value.trim() && !confirm('入力中のテキストを消します。よろしいですか？')) return;
+      area.value = '';
+      try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+      renderBulkPreview();
+    });
+    $('#btnBulkAppend').addEventListener('click', () => applyBulkScript('append'));
+    $('#btnBulkReplace').addEventListener('click', () => applyBulkScript('replace'));
+    $('#btnBulkExport').addEventListener('click', exportBulkText);
+    renderBulkHelp();
+    renderBulkPreview();
+  })();
   $('#btnApplyJson').addEventListener('click', () => {
     let arr;
     try { arr = JSON.parse($('#jsonArea').value); } catch (e) { toast('JSONの形式が正しくありません'); return; }
@@ -2435,7 +3402,8 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     const lines = arr.map((o) => {
       const name = o.name != null ? String(o.name) : '';
       const ch = state.chars.find((c) => c.name === name) || null;
-      const fx = (o.effect === 'heart' || o.effect === 'sparkle' || o.effect === 'soft') ? o.effect : 'none';
+      const FX_OK = { heart: 1, heart2: 1, flower: 1, sparkle: 1, soft: 1 };
+      const fx = FX_OK[o.effect] ? o.effect : 'none';
       const narration = o.narration === true || o.type === 'narration';
       let slot = o.slot ? String(o.slot) : null;
       if (ch) {
@@ -2549,6 +3517,31 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     applyDialogue(previewLine()); persist();
   });
 
+  /* --- セーフエリア設定 --- */
+  $('#safePreset').addEventListener('change', (e) => {
+    const key = e.target.value;
+    if (key === 'custom') { setSafe({ preset: 'custom' }); return; }
+    const pr = SAFE_PRESETS[key] || SAFE_PRESETS.none;
+    setSafe({ preset: key, b: pr.b, t: pr.t, r: pr.r });
+    if (key !== 'none') toast(SAFE_PRESET_NAME[key] + '用に、セリフ枠を内側へ移動しました');
+  });
+  [['#safeBRange', 'b'], ['#safeTRange', 't'], ['#safeRRange', 'r']].forEach(([sel, key]) => {
+    const node = $(sel);
+    if (!node) return;
+    node.addEventListener('input', (e) => {
+      const v = clamp(parseInt(e.target.value, 10) || 0, 0, 60);
+      safeCfg().preset = 'custom';
+      const ps = $('#safePreset'); if (ps) ps.value = 'custom';
+      setSafe({ [key]: v });
+    });
+  });
+  $('#safeGuideToggle').addEventListener('change', (e) => {
+    safeCfg().guide = e.target.checked; applySafeGuide(); persist();
+  });
+  $('#safeGuidePlayToggle').addEventListener('change', (e) => {
+    safeCfg().guidePlay = e.target.checked; applySafeGuide(); persist();
+  });
+
   /* --- 設定パネル --- */
   $('#fitMode').addEventListener('change', (e) => {
     state.fit = e.target.value === 'cover' ? 'cover' : 'contain';
@@ -2566,6 +3559,14 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     persist();
     toast(state.auto.enabled ? '自動送り: ON' : '自動送り: OFF');
   });
+  if ($('#endWaitSel')) {
+    $('#endWaitSel').addEventListener('change', (e) => {
+      state.end = Object.assign({ wait: 3 }, state.end || {});
+      state.end.wait = clamp(parseFloat(e.target.value) || 0, 0, 30);
+      persist();
+      toast('最後のセリフ後 ' + state.end.wait + '秒 待ってから「もう一度」を出します');
+    });
+  }
   $('#autoSecRange').addEventListener('input', (e) => {
     if (!state.auto) state.auto = { enabled: false, sec: 3 };
     state.auto.sec = parseFloat(e.target.value);
@@ -2672,6 +3673,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     $('#autoToggle').checked = !!(state.auto && state.auto.enabled);
     $('#autoSecRange').value = (state.auto && state.auto.sec) || 3;
     $('#autoSecLabel').textContent = Number((state.auto && state.auto.sec) || 3).toFixed(1) + '秒';
+    if ($('#endWaitSel')) $('#endWaitSel').value = String((state.end && typeof state.end.wait === 'number') ? state.end.wait : 3);
     $('#twToggle').checked = !!(state.text && state.text.typewriter);
     $('#twSeSel').value = (state.text && state.text.seKind) || 'none';
     $('#swayToggle').checked = state.idleSway !== false;
@@ -2680,6 +3682,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
     $('#fontScaleRange').value = state.win.fontScale || 1;
     $('#fontScaleLabel').textContent = Math.round((state.win.fontScale || 1) * 100) + '%';
     $('#winPos').value = state.win.pos || 'bottom';
+    applySafeVars(); syncSafeUI();
     $('#fitMode').value = state.fit === 'cover' ? 'cover' : 'contain';
     constrainSlotHeights();
   }
@@ -2707,6 +3710,7 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
       if (!('bg' in l)) l.bg = null;
       if (typeof l.narration !== 'boolean') l.narration = false;
     });
+    state.chars.forEach((c) => { if (typeof c.sway !== 'boolean') c.sway = true; });   // 個別の揺れ（旧データ互換）
     stage.classList.add('stage-editing');
     renderAll({ stage: true });
     $('#lineCounter').textContent = (state.lines.length ? 1 : 0) + ' / ' + state.lines.length;
@@ -2718,5 +3722,5 @@ window.DEMO_ASSETS = {"bgs":[{"id":"bg-classroom","name":"教室（現代）","d
   else boot();
 })();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4dd80560fb2fca0',t:'MTc5MjU1Njc1Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
